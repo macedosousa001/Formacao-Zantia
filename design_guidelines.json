@@ -1,0 +1,123 @@
+{
+  "theme": "light",
+  "archetype": "4 (Swiss & High-Contrast) adapted for Industrial",
+  "colors": {
+    "primary": "#D92525",
+    "primary_hover": "#B91C1C",
+    "secondary": "#1A365D",
+    "secondary_hover": "#1E40AF",
+    "background": "#F8FAFC",
+    "surface": "#FFFFFF",
+    "surface_alt": "#F1F5F9",
+    "text_main": "#0F172A",
+    "text_muted": "#475569",
+    "border": "#E2E8F0",
+    "accent": "#EA580C"
+  },
+  "typography": {
+    "font_family": {
+      "heading": "IBM Plex Sans",
+      "body": "IBM Plex Sans"
+    },
+    "scale": {
+      "h1": "text-4xl sm:text-5xl font-bold tracking-tight text-[#1A365D]",
+      "h2": "text-2xl sm:text-3xl font-semibold tracking-tight text-[#1A365D]",
+      "h3": "text-xl sm:text-2xl font-semibold text-[#1A365D]",
+      "body": "text-base text-[#475569] leading-relaxed",
+      "small": "text-sm text-[#64748B]"
+    }
+  },
+  "layout": {
+    "spacing": {
+      "container_padding": "p-4 sm:p-8 md:p-12",
+      "section_gap": "gap-8 md:gap-12",
+      "element_gap": "gap-4 md:gap-6"
+    },
+    "border_radius": {
+      "cards": "rounded-lg",
+      "buttons": "rounded-md",
+      "images": "rounded-md"
+    },
+    "shadows": {
+      "card": "shadow-sm hover:shadow-md transition-shadow duration-200",
+      "header": "shadow-sm"
+    }
+  },
+  "screens": {
+    "home": {
+      "hero_section": {
+        "layout": "Relative container with responsive height (e.g., h-[50vh] to h-[60vh]). Image with bg-[#1A365D]/60 overlay for a corporate tech feel.",
+        "content": "Left-aligned text. H1 'Energia & Climatização' (Energy & Climatization). Subtitle highlighting Photovoltaic, Heat Pumps, Boilers, AC, and Accessories.",
+        "action": "Primary CTA button (bg-[#D92525]) to scroll down or navigate to categories."
+      },
+      "gavetoes_grid": {
+        "layout": "Grid cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6. Displays the 5 main categories (gavetões).",
+        "card_style": "Surface white, 1px border slate-200, rounded-lg, overflow-hidden. Top image (aspect-video), padded bottom section with bold text and right arrow icon. Hover lift effect (-translate-y-1)."
+      }
+    },
+    "gavetao_details": {
+      "layout": "Header with category title, back button, and category icon. Grid of 'gavetinhas' (sub-items).",
+      "grid": "Grid cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4.",
+      "item_style": "Minimalist square card. Image top (aspect-square), small bold text below. Clean industrial aesthetic."
+    },
+    "gavetinha_product": {
+      "layout": "Web: Two columns (Media left, Info right). Mobile: Stacked view.",
+      "gallery": "Main image frame with a horizontal scrollable strip of thumbnails below.",
+      "video_section": "16:9 aspect ratio container for video embed (YouTube/Vimeo).",
+      "text_content": "Technical specifications, description text, and list of features. Clean spacing."
+    },
+    "admin_area": {
+      "layout": "Accessible without authentication (open admin as requested). Simple list of gavetinhas with 'Edit' buttons.",
+      "form": "Vertical modal or full screen. Inputs: Title, Text area for Description, Image upload button (converts to base64 for storage), Video URL input.",
+      "buttons": "Primary red button to 'Save Changes', outline button for 'Cancel'."
+    }
+  },
+  "structure_data": {
+    "gavetões": [
+      {
+        "id": 1,
+        "title": "Fotovoltaico",
+        "count": 11,
+        "image_url": "https://images.unsplash.com/photo-1624397640148-949b1732bb0a?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTB8MHwxfHNlYXJjaHwxfHxzb2xhciUyMHBhbmVscyUyMHJvb2Z8ZW58MHx8fHwxNzc3NzUzMzU5fDA&ixlib=rb-4.1.0&q=85"
+      },
+      {
+        "id": 2,
+        "title": "Bombas de Calor",
+        "count": 7,
+        "image_url": "https://images.unsplash.com/photo-1776860154052-d91c90b25c59?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2OTF8MHwxfHNlYXJjaHwxfHxoZWF0JTIwcHVtcCUyMG91dGRvb3JzfGVufDB8fHx8MTc3Nzc1MzM1OXww&ixlib=rb-4.1.0&q=85"
+      },
+      {
+        "id": 3,
+        "title": "Caldeiras",
+        "count": 3,
+        "image_url": "https://images.unsplash.com/photo-1693347682239-54e2d92b07e6?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxODh8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBib2lsZXJ8ZW58MHx8fHwxNzc3NzUzMzU5fDA&ixlib=rb-4.1.0&q=85"
+      },
+      {
+        "id": 4,
+        "title": "Ar Condicionado",
+        "count": 9,
+        "image_url": "https://images.unsplash.com/photo-1617861648989-76a572012089?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NTYxOTF8MHwxfHNlYXJjaHwxfHxhaXIlMjBjb25kaXRpb25lciUyMHdhbGx8ZW58MHx8fHwxNzc3NzUzMzU5fDA&ixlib=rb-4.1.0&q=85"
+      },
+      {
+        "id": 5,
+        "title": "Acessórios",
+        "count": 1,
+        "image_url": "https://images.unsplash.com/photo-1667264921635-0fdd6bab6174?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHwxfHxodmFjJTIwcGFydHMlMjBwaXBlc3xlbnwwfHx8fDE3Nzc3NTMzNjJ8MA&ixlib=rb-4.1.0&q=85"
+      }
+    ]
+  },
+  "media": {
+    "hero_image": "https://images.unsplash.com/photo-1776860155275-eee24bfb1dee?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjV8MHwxfHNlYXJjaHwxfHxtb2Rlcm4lMjBodmFjJTIwaW5zdGFsbGF0aW9uJTIwaG91c2V8ZW58MHx8fHwxNzc3NzUzMzYyfDA&ixlib=rb-4.1.0&q=85"
+  },
+  "components_strategy": {
+    "navigation": "Sticky top header. Brand logo on the left, Admin mode toggle/link on the right. Solid white background with a thin bottom border.",
+    "buttons": "Primary buttons: bg-[#D92525] text-white. Secondary buttons: border border-[#1A365D] text-[#1A365D]. Rounded-md.",
+    "forms": "Clean labels (text-sm font-semibold text-[#1A365D]). Inputs with border-slate-300, focus:border-[#D92525] focus:ring-1 focus:ring-[#D92525].",
+    "images_handling": "Since Expo Web/Mobile handles base64 easily, ensure `Image` components are configured to accept base64 format (e.g., `uri: 'data:image/jpeg;base64,...'`) or direct URLs."
+  },
+  "technical_notes": {
+    "file_extension": "MUST use .js extension for all components as required. Do not use .tsx.",
+    "testing_attributes": "All interactive and main layout elements MUST include data-testid (e.g., data-testid='gavetao-card-1', data-testid='admin-edit-button').",
+    "responsive": "Use mobile-first utility classes. Ensure touch targets are at least 44px high for mobile usability."
+  }
+}
