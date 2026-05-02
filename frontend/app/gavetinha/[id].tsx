@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { WebView } from 'react-native-webview';
 import { theme, API_URL } from '../../src/theme';
+import PromptModal from '../../src/PromptModal';
 
 type Gavetinha = {
   id: string;
@@ -59,20 +60,27 @@ export default function GavetinhaScreen() {
   const [videos, setVideos] = useState<string[]>([]);
   const [videoInput, setVideoInput] = useState('');
   const [activeImageIdx, setActiveImageIdx] = useState(0);
+  const [children, setChildren] = useState<Gavetinha[]>([]);
+  const [showCreateChild, setShowCreateChild] = useState(false);
 
   const { width } = useWindowDimensions();
   const isWide = width >= 900;
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/gavetinhas/${id}`);
+      const [res, cres] = await Promise.all([
+        fetch(`${API_URL}/gavetinhas/${id}`),
+        fetch(`${API_URL}/gavetinhas/${id}/children`),
+      ]);
       const d = await res.json();
+      const c = await cres.json();
       setData(d);
       setTitle(d.title);
       setDescription(d.description);
       setImages(d.images);
       setVideos(d.videos);
       setActiveImageIdx(0);
+      setChildren(Array.isArray(c) ? c : []);
     } catch (e) {
       console.log('err', e);
     } finally {
@@ -150,6 +158,24 @@ export default function GavetinhaScreen() {
     setImages(data.images);
     setVideos(data.videos);
     setEditing(false);
+  };
+
+  const createChild = async (childTitle: string) => {
+    setShowCreateChild(false);
+    if (!data) return;
+    try {
+      await fetch(`${API_URL}/gavetinhas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gavetao_id: data.gavetao_id,
+          parent_gavetinha_id: data.id,
+          title: childTitle,
+          description: '',
+        }),
+      });
+      load();
+    } catch (e) { console.log(e); }
   };
 
   if (loading || !data) {
@@ -499,4 +525,22 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary, borderRadius: 4,
   },
   btnPrimaryText: { color: '#fff', fontWeight: '700' },
+  subHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 },
+  subTitle: { fontSize: 18, fontWeight: '800', color: theme.colors.secondary, marginTop: 4 },
+  smallAddBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: theme.colors.primary, paddingHorizontal: 12, paddingVertical: 8, borderRadius: 4,
+  },
+  smallAddText: { color: '#fff', fontWeight: '700', fontSize: 12 },
+  childGrid: { gap: 8 },
+  childCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border,
+    padding: 14, borderRadius: 6,
+  },
+  childBadge: {
+    backgroundColor: theme.colors.secondary, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 3,
+  },
+  childBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
+  childTitle: { flex: 1, fontSize: 14, fontWeight: '700', color: theme.colors.secondary },
 });

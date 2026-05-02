@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, API_URL } from '../src/theme';
+import PromptModal from '../src/PromptModal';
 
 type Gavetao = {
   id: string;
@@ -30,6 +31,7 @@ export default function Home() {
   const [gavetoes, setGavetoes] = useState<Gavetao[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
   const { width } = useWindowDimensions();
   const isWide = width >= 768;
   const columns = isWide ? (width >= 1200 ? 3 : 2) : 1;
@@ -56,6 +58,20 @@ export default function Home() {
     load();
   };
 
+  const createGavetao = async (title: string, subtitle?: string) => {
+    setShowCreate(false);
+    try {
+      await fetch(`${API_URL}/gavetoes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, subtitle: subtitle || '' }),
+      });
+      load();
+    } catch (e) {
+      console.log(e);
+    }
+  };
+
   const cardWidth = columns === 1 ? '100%' : `${100 / columns - 2}%`;
 
   return (
@@ -70,6 +86,14 @@ export default function Home() {
             <Text style={styles.brandSub}>FORMAÇÃO</Text>
           </View>
         </View>
+        <TouchableOpacity
+          style={styles.adminBtn}
+          onPress={() => router.push('/admin')}
+          testID="admin-link"
+        >
+          <Ionicons name="settings-outline" size={16} color={theme.colors.secondary} />
+          <Text style={styles.adminBtnText}>Administração</Text>
+        </TouchableOpacity>
       </View>
 
       <ScrollView
@@ -108,8 +132,20 @@ export default function Home() {
 
         {/* Sections header */}
         <View style={[styles.sectionHeader, isWide && { paddingHorizontal: 64 }]}>
-          <Text style={styles.sectionEyebrow}>CATÁLOGO TÉCNICO</Text>
-          <Text style={styles.sectionTitle}>5 áreas de formação</Text>
+          <View style={styles.sectionHeaderRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.sectionEyebrow}>CATÁLOGO TÉCNICO</Text>
+              <Text style={styles.sectionTitle}>{gavetoes.length} áreas de formação</Text>
+            </View>
+            <TouchableOpacity
+              style={styles.addInlineBtn}
+              onPress={() => setShowCreate(true)}
+              testID="add-gavetao-btn"
+            >
+              <Ionicons name="add" size={18} color="#fff" />
+              <Text style={styles.addInlineText}>Novo gavetão</Text>
+            </TouchableOpacity>
+          </View>
           <Text style={styles.sectionDesc}>
             Conteúdos organizados por categoria. Selecione um gavetão para aceder às fichas técnicas, imagens e vídeos.
           </Text>
@@ -155,6 +191,15 @@ export default function Home() {
           <Text style={styles.footerText}>© Zantia Formação · Plataforma interna</Text>
         </View>
       </ScrollView>
+
+      <PromptModal
+        visible={showCreate}
+        title="Novo Gavetão"
+        placeholder="Nome da categoria"
+        subtitleField
+        onCancel={() => setShowCreate(false)}
+        onSubmit={createGavetao}
+      />
     </SafeAreaView>
   );
 }
@@ -167,7 +212,23 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surface,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
+  adminBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8,
+    borderWidth: 1, borderColor: theme.colors.border, borderRadius: 4,
+  },
+  adminBtnText: { fontSize: 12, fontWeight: '700', color: theme.colors.secondary, letterSpacing: 0.5 },
+  sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  addInlineBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: theme.colors.primary,
+    paddingHorizontal: 14, paddingVertical: 10, borderRadius: 4,
+  },
+  addInlineText: { color: '#fff', fontWeight: '700', fontSize: 13 },
   logoRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   logoBadge: {
     width: 40,

@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, API_URL } from '../../src/theme';
+import PromptModal from '../../src/PromptModal';
 
 type Gavetinha = {
   id: string;
@@ -72,6 +73,18 @@ export default function GavetaoScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const createGavetinha = async (title: string) => {
+    setShowCreate(false);
+    try {
+      await fetch(`${API_URL}/gavetinhas`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ gavetao_id: id, title, description: '' }),
+      });
+      load();
+    } catch (e) { console.log(e); }
+  };
 
   const itemWidth = `${100 / columns - 2}%`;
 
@@ -138,9 +151,26 @@ export default function GavetaoScreen() {
                 </TouchableOpacity>
               );
             })}
+            {/* Add card */}
+            <TouchableOpacity
+              style={[styles.item, styles.addCard, { width: itemWidth as any }]}
+              onPress={() => setShowCreate(true)}
+              testID="add-gavetinha-btn"
+            >
+              <Ionicons name="add-circle-outline" size={42} color={theme.colors.primary} />
+              <Text style={styles.addCardText}>Nova gavetinha</Text>
+            </TouchableOpacity>
           </View>
         </ScrollView>
       )}
+
+      <PromptModal
+        visible={showCreate}
+        title="Nova Gavetinha"
+        placeholder="Nome do item"
+        onCancel={() => setShowCreate(false)}
+        onSubmit={createGavetinha}
+      />
     </SafeAreaView>
   );
 }
@@ -205,4 +235,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 8,
     paddingTop: 8, borderTopWidth: 1, borderTopColor: theme.colors.border,
   },
+  addCard: {
+    alignItems: 'center', justifyContent: 'center',
+    borderStyle: 'dashed', borderColor: theme.colors.primary, borderWidth: 2,
+    minHeight: 180, padding: 16, gap: 8, backgroundColor: theme.colors.surfaceAlt,
+  },
+  addCardText: { fontWeight: '800', color: theme.colors.primary, fontSize: 13 },
 });
