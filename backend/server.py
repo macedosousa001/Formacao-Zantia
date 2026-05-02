@@ -29,8 +29,10 @@ class Gavetinha(BaseModel):
     parent_gavetinha_id: Optional[str] = None  # None = top-level, else sub-item
     title: str
     description: str = ""
+    specs: str = ""
     images: List[str] = []
     videos: List[str] = []
+    pdfs: List[dict] = []  # [{name, data}] data = base64 data URI or URL
     order: int = 0
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -45,8 +47,10 @@ class GavetinhaCreate(BaseModel):
 class GavetinhaUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
+    specs: Optional[str] = None
     images: Optional[List[str]] = None
     videos: Optional[List[str]] = None
+    pdfs: Optional[List[dict]] = None
     order: Optional[int] = None
 
 

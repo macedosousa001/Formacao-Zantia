@@ -18,6 +18,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system/legacy';
 import { WebView } from 'react-native-webview';
 import { theme, API_URL } from '../../src/theme';
 import PromptModal from '../../src/PromptModal';
@@ -27,8 +29,10 @@ type Gavetinha = {
   gavetao_id: string;
   title: string;
   description: string;
+  specs: string;
   images: string[];
   videos: string[];
+  pdfs: { name: string; data: string }[];
 };
 
 function extractYouTubeId(url: string): string | null {
@@ -56,8 +60,10 @@ export default function GavetinhaScreen() {
   const [saving, setSaving] = useState(false);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [specs, setSpecs] = useState('');
   const [images, setImages] = useState<string[]>([]);
   const [videos, setVideos] = useState<string[]>([]);
+  const [pdfs, setPdfs] = useState<{ name: string; data: string }[]>([]);
   const [videoInput, setVideoInput] = useState('');
   const [activeImageIdx, setActiveImageIdx] = useState(0);
   const [children, setChildren] = useState<Gavetinha[]>([]);
@@ -77,8 +83,10 @@ export default function GavetinhaScreen() {
       setData(d);
       setTitle(d.title);
       setDescription(d.description);
+      setSpecs(d.specs || '');
       setImages(d.images);
       setVideos(d.videos);
+      setPdfs(d.pdfs || []);
       setActiveImageIdx(0);
       setChildren(Array.isArray(c) ? c : []);
     } catch (e) {
@@ -132,13 +140,63 @@ export default function GavetinhaScreen() {
     setVideos((prev) => prev.filter((_, i) => i !== idx));
   };
 
+  const pickPdf = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: 'application/pdf',
+      copyToCacheDirectory: true,
+      multiple: false,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    try {
+      let dataUri: string;
+      if (Platform.OS === 'web') {
+        // On web, uri is a blob: URL. Fetch and convert to base64.
+        const resp = await fetch(asset.uri);
+        const blob = await resp.blob();
+        dataUri = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      } else {
+        const b64 = await FileSystem.readAsStringAsync(asset.uri, { encoding: 'base64' });
+        dataUri = `data:application/pdf;base64,${b64}`;
+      }
+      setPdfs((prev) => [...prev, { name: asset.name || 'documento.pdf', data: dataUri }]);
+    } catch (e) {
+      Alert.alert('Erro', 'Não foi possível carregar o PDF.');
+    }
+  };
+
+  const removePdf = (idx: number) => {
+    setPdfs((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const openPdf = async (pdf: { name: string; data: string }) => {
+    if (Platform.OS === 'web') {
+      // Open in new tab
+      const win = window.open();
+      if (win) {
+        win.document.write(
+          `<iframe src="${pdf.data}" style="border:0;width:100%;height:100vh" title="${pdf.name}"></iframe>`
+        );
+      }
+    } else {
+      Linking.openURL(pdf.data).catch(() => {
+        Alert.alert('Não foi possível abrir', 'Este dispositivo não tem visualizador de PDF.');
+      });
+    }
+  };
+
   const save = async () => {
     setSaving(true);
     try {
       const res = await fetch(`${API_URL}/gavetinhas/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, description, images, videos }),
+        body: JSON.stringify({ title, description, specs, images, videos, pdfs }),
       });
       if (!res.ok) throw new Error('failed');
       const updated = await res.json();
@@ -155,8 +213,10 @@ export default function GavetinhaScreen() {
     if (!data) return;
     setTitle(data.title);
     setDescription(data.description);
+    setSpecs(data.specs || '');
     setImages(data.images);
     setVideos(data.videos);
+    setPdfs(data.pdfs || []);
     setEditing(false);
   };
 
@@ -341,6 +401,44 @@ export default function GavetinhaScreen() {
                   </TouchableOpacity>
                 </View>
               )}
+
+              {/* PDFs */}
+              {(pdfs.length > 0 || editing) && (
+                <View style={{ marginTop: 18 }}>
+                  <Text style={styles.label}>Documentos PDF</Text>
+                  {pdfs.map((pdf, idx) => (
+                    <View key={idx} style={styles.pdfRow}>
+                      <TouchableOpacity
+                        style={styles.pdfInfo}
+                        onPress={() => openPdf(pdf)}
+                        testID={`pdf-open-${idx}`}
+                      >
+                        <Ionicons name="document-text" size={22} color={theme.colors.primary} />
+                        <Text style={styles.pdfName} numberOfLines={1}>{pdf.name}</Text>
+                      </TouchableOpacity>
+                      {editing && (
+                        <TouchableOpacity
+                          onPress={() => removePdf(idx)}
+                          style={styles.pdfRemove}
+                          testID={`pdf-remove-${idx}`}
+                        >
+                          <Ionicons name="trash-outline" size={16} color="#991B1B" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ))}
+                  {editing && (
+                    <TouchableOpacity
+                      style={[styles.uploadBtn, { marginTop: 10, backgroundColor: theme.colors.accent }]}
+                      onPress={pickPdf}
+                      testID="upload-pdf-btn"
+                    >
+                      <Ionicons name="document-attach-outline" size={18} color="#fff" />
+                      <Text style={styles.uploadBtnText}>Adicionar PDF</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              )}
             </View>
 
             {/* Info column */}
@@ -364,6 +462,17 @@ export default function GavetinhaScreen() {
                     multiline
                     textAlignVertical="top"
                     testID="description-input"
+                  />
+                  <Text style={[styles.label, { marginTop: 14 }]}>Especificações técnicas</Text>
+                  <TextInput
+                    style={[styles.input, styles.textarea]}
+                    value={specs}
+                    onChangeText={setSpecs}
+                    placeholder="Potência, dimensões, certificações..."
+                    placeholderTextColor={theme.colors.textLight}
+                    multiline
+                    textAlignVertical="top"
+                    testID="specs-input"
                   />
                   <View style={styles.actionsRow}>
                     <TouchableOpacity style={styles.btnOutline} onPress={cancel} disabled={saving}>
@@ -393,6 +502,14 @@ export default function GavetinhaScreen() {
                   <Text style={styles.description} testID="detail-description">
                     {data.description || 'Sem descrição. Use o botão editar para adicionar conteúdo.'}
                   </Text>
+                  {!!data.specs && (
+                    <>
+                      <Text style={[styles.eyebrow, { marginTop: 18 }]}>ESPECIFICAÇÕES</Text>
+                      <Text style={[styles.description, { marginTop: 8 }]} testID="detail-specs">
+                        {data.specs}
+                      </Text>
+                    </>
+                  )}
                   <View style={styles.metaRow}>
                     <View style={styles.metaChip}>
                       <Ionicons name="images-outline" size={14} color={theme.colors.secondary} />
@@ -401,6 +518,10 @@ export default function GavetinhaScreen() {
                     <View style={styles.metaChip}>
                       <Ionicons name="videocam-outline" size={14} color={theme.colors.secondary} />
                       <Text style={styles.metaChipText}>{videos.length} vídeos</Text>
+                    </View>
+                    <View style={styles.metaChip}>
+                      <Ionicons name="document-text-outline" size={14} color={theme.colors.secondary} />
+                      <Text style={styles.metaChipText}>{pdfs.length} PDFs</Text>
                     </View>
                   </View>
                 </>
@@ -543,4 +664,12 @@ const styles = StyleSheet.create({
   },
   childBadgeText: { color: '#fff', fontSize: 11, fontWeight: '800' },
   childTitle: { flex: 1, fontSize: 14, fontWeight: '700', color: theme.colors.secondary },
+  pdfRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.border,
+    borderRadius: 6, padding: 10, marginTop: 6,
+  },
+  pdfInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
+  pdfName: { flex: 1, fontSize: 13, fontWeight: '600', color: theme.colors.textMain },
+  pdfRemove: { padding: 6, borderRadius: 4, backgroundColor: '#FEF2F2' },
 });

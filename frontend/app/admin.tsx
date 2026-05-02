@@ -1,15 +1,17 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  ActivityIndicator, Alert,
+  ActivityIndicator, Alert, Modal, TextInput, Image,
+  KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { theme, API_URL } from '../src/theme';
 import PromptModal from '../src/PromptModal';
 
-type Gavetao = { id: string; title: string; subtitle: string; gavetinhas: any[] };
+type Gavetao = { id: string; title: string; subtitle: string; image_url: string; gavetinhas: any[] };
 
 export default function Admin() {
   const router = useRouter();
@@ -18,6 +20,11 @@ export default function Admin() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [createOpen, setCreateOpen] = useState(false);
   const [createGavetaoId, setCreateGavetaoId] = useState<string | null>(null);
+  const [editTarget, setEditTarget] = useState<Gavetao | null>(null);
+  const [editTitle, setEditTitle] = useState('');
+  const [editSubtitle, setEditSubtitle] = useState('');
+  const [editImage, setEditImage] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -76,6 +83,49 @@ export default function Admin() {
     load();
   };
 
+  const openEdit = (g: Gavetao) => {
+    setEditTarget(g);
+    setEditTitle(g.title);
+    setEditSubtitle(g.subtitle || '');
+    setEditImage(g.image_url || '');
+  };
+
+  const pickEditImage = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permissão necessária', 'Precisamos de acesso às imagens.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+      base64: true,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const a = result.assets[0];
+      const mime = a.mimeType || 'image/jpeg';
+      setEditImage(a.base64 ? `data:${mime};base64,${a.base64}` : a.uri);
+    }
+  };
+
+  const saveEdit = async () => {
+    if (!editTarget) return;
+    setSavingEdit(true);
+    try {
+      await fetch(`${API_URL}/gavetoes/${editTarget.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: editTitle, subtitle: editSubtitle, image_url: editImage }),
+      });
+      setEditTarget(null);
+      load();
+    } catch {
+      Alert.alert('Erro', 'Não foi possível guardar.');
+    } finally {
+      setSavingEdit(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.topbar}>
@@ -122,6 +172,14 @@ export default function Admin() {
                 >
                   <Ionicons name="eye-outline" size={16} color={theme.colors.secondary} />
                   <Text style={styles.actionText}>Ver</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.actionBtn}
+                  onPress={() => openEdit(g)}
+                  testID={`admin-edit-gavetao-${g.id}`}
+                >
+                  <Ionicons name="create-outline" size={16} color={theme.colors.accent} />
+                  <Text style={[styles.actionText, { color: theme.colors.accent }]}>Editar</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.actionBtn}
@@ -188,6 +246,72 @@ export default function Admin() {
         onCancel={() => setCreateGavetaoId(null)}
         onSubmit={createGavetinha}
       />
+
+      {/* Edit gavetao modal */}
+      <Modal transparent visible={!!editTarget} animationType="fade" onRequestClose={() => setEditTarget(null)}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
+          <ScrollView style={styles.modalCard} contentContainerStyle={{ padding: 20 }}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Editar Gavetão</Text>
+              <TouchableOpacity onPress={() => setEditTarget(null)} testID="edit-close">
+                <Ionicons name="close" size={22} color={theme.colors.secondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalLabel}>Título</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={editTitle}
+              onChangeText={setEditTitle}
+              testID="edit-title-input"
+            />
+
+            <Text style={[styles.modalLabel, { marginTop: 12 }]}>Subtítulo</Text>
+            <TextInput
+              style={styles.modalInput}
+              value={editSubtitle}
+              onChangeText={setEditSubtitle}
+              testID="edit-subtitle-input"
+            />
+
+            <Text style={[styles.modalLabel, { marginTop: 12 }]}>Imagem de capa</Text>
+            {!!editImage && (
+              <Image source={{ uri: editImage }} style={styles.editPreview} />
+            )}
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TouchableOpacity style={styles.uploadSmall} onPress={pickEditImage} testID="edit-pick-image">
+                <Ionicons name="image-outline" size={16} color="#fff" />
+                <Text style={styles.uploadSmallText}>Carregar imagem</Text>
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              style={[styles.modalInput, { marginTop: 8 }]}
+              value={editImage}
+              onChangeText={setEditImage}
+              placeholder="Ou cole um URL de imagem"
+              placeholderTextColor={theme.colors.textLight}
+              testID="edit-image-url"
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalBtnOutline} onPress={() => setEditTarget(null)}>
+                <Text style={styles.modalBtnOutlineText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtnPrimary, savingEdit && { opacity: 0.6 }]}
+                onPress={saveEdit}
+                disabled={savingEdit}
+                testID="edit-save"
+              >
+                {savingEdit ? <ActivityIndicator color="#fff" /> : <Text style={styles.modalBtnPrimaryText}>Guardar</Text>}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -237,4 +361,40 @@ const styles = StyleSheet.create({
   childDel: {
     padding: 6, borderRadius: 4, backgroundColor: '#FEF2F2',
   },
+  modalBackdrop: {
+    flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    alignItems: 'center', justifyContent: 'center', padding: 20,
+  },
+  modalCard: {
+    width: '100%', maxWidth: 500, maxHeight: '90%',
+    backgroundColor: '#fff', borderRadius: 10,
+  },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: theme.colors.secondary },
+  modalLabel: { fontSize: 13, fontWeight: '700', color: theme.colors.secondary, marginBottom: 6 },
+  modalInput: {
+    borderWidth: 1, borderColor: theme.colors.border, borderRadius: 6,
+    paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: theme.colors.textMain,
+  },
+  editPreview: {
+    width: '100%', aspectRatio: 16 / 9, borderRadius: 6,
+    backgroundColor: theme.colors.surfaceAlt, marginBottom: 8,
+  },
+  uploadSmall: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: theme.colors.secondary, paddingVertical: 10, paddingHorizontal: 14,
+    borderRadius: 4, alignSelf: 'flex-start',
+  },
+  uploadSmallText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  modalActions: { flexDirection: 'row', gap: 10, marginTop: 20 },
+  modalBtnOutline: {
+    flex: 1, paddingVertical: 12, alignItems: 'center',
+    borderWidth: 1, borderColor: theme.colors.secondary, borderRadius: 4,
+  },
+  modalBtnOutlineText: { color: theme.colors.secondary, fontWeight: '700' },
+  modalBtnPrimary: {
+    flex: 1, paddingVertical: 12, alignItems: 'center',
+    backgroundColor: theme.colors.primary, borderRadius: 4,
+  },
+  modalBtnPrimaryText: { color: '#fff', fontWeight: '700' },
 });
