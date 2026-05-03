@@ -93,6 +93,53 @@ export default function Home() {
     }
   };
 
+  const openHeroEdit = () => {
+    setDraftImage(settings.hero_image);
+    setDraftTitle(settings.hero_title);
+    setDraftSubtitle(settings.hero_subtitle);
+    setEditHero(true);
+  };
+
+  const pickHeroImage = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      Alert.alert('Permissão necessária', 'Precisamos de acesso às imagens.');
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.7,
+      base64: true,
+    });
+    if (!result.canceled && result.assets[0]) {
+      const a = result.assets[0];
+      const mime = a.mimeType || 'image/jpeg';
+      setDraftImage(a.base64 ? `data:${mime};base64,${a.base64}` : a.uri);
+    }
+  };
+
+  const saveHero = async () => {
+    setSavingHero(true);
+    try {
+      const res = await fetch(`${API_URL}/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          hero_image: draftImage,
+          hero_title: draftTitle,
+          hero_subtitle: draftSubtitle,
+        }),
+      });
+      const updated = await res.json();
+      setSettings(updated);
+      setEditHero(false);
+    } catch {
+      Alert.alert('Erro', 'Não foi possível guardar.');
+    } finally {
+      setSavingHero(false);
+    }
+  };
+
   const cardWidth = columns === 1 ? '100%' : `${100 / columns - 2}%`;
 
   return (
