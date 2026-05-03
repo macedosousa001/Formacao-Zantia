@@ -14,6 +14,7 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, API_URL } from '../../src/theme';
 import PromptModal from '../../src/PromptModal';
+import QuizPanel, { QuizQuestion } from '../../src/QuizPanel';
 
 type Gavetinha = {
   id: string;
@@ -28,6 +29,7 @@ type Gavetao = {
   title: string;
   subtitle: string;
   image_url: string;
+  quiz: QuizQuestion[];
   gavetinhas: Gavetinha[];
 };
 
@@ -160,6 +162,16 @@ export default function GavetaoScreen() {
               <Ionicons name="add-circle-outline" size={42} color={theme.colors.primary} />
               <Text style={styles.addCardText}>Nova gavetinha</Text>
             </TouchableOpacity>
+          </View>
+
+          {/* Quiz */}
+          <View style={[{ paddingHorizontal: theme.spacing.md }, isWide && { paddingHorizontal: 56 }]}>
+            <QuizPanel
+              entityType="gavetoes"
+              entityId={data.id}
+              initialQuiz={data.quiz || []}
+              onSaved={(q) => setData({ ...data, quiz: q })}
+            />
           </View>
         </ScrollView>
       )}

@@ -23,6 +23,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { WebView } from 'react-native-webview';
 import { theme, API_URL } from '../../src/theme';
 import PromptModal from '../../src/PromptModal';
+import QuizPanel, { QuizQuestion } from '../../src/QuizPanel';
 
 type Gavetinha = {
   id: string;
@@ -33,6 +34,7 @@ type Gavetinha = {
   images: string[];
   videos: string[];
   pdfs: { name: string; data: string }[];
+  quiz: QuizQuestion[];
 };
 
 function extractYouTubeId(url: string): string | null {
@@ -527,6 +529,49 @@ export default function GavetinhaScreen() {
                 </>
               )}
             </View>
+          </View>
+
+          {/* Sub-gavetinhas (3rd level) + Quiz */}
+          <View style={{ padding: theme.spacing.md, paddingHorizontal: isWide ? 48 : theme.spacing.md }}>
+            <View style={styles.subHeader}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.eyebrow}>SUB-ITENS</Text>
+                <Text style={styles.subTitle}>{children.length} {children.length === 1 ? 'subitem' : 'subitens'}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.smallAddBtn}
+                onPress={() => setShowCreateChild(true)}
+                testID="add-subgavetinha-btn"
+              >
+                <Ionicons name="add" size={16} color="#fff" />
+                <Text style={styles.smallAddText}>Adicionar</Text>
+              </TouchableOpacity>
+            </View>
+            {children.length > 0 && (
+              <View style={styles.childGrid}>
+                {children.map((c, idx) => (
+                  <TouchableOpacity
+                    key={c.id}
+                    style={styles.childCard}
+                    onPress={() => router.push(`/gavetinha/${c.id}`)}
+                    testID={`subgavetinha-${c.id}`}
+                  >
+                    <View style={styles.childBadge}>
+                      <Text style={styles.childBadgeText}>{String(idx + 1).padStart(2, '0')}</Text>
+                    </View>
+                    <Text style={styles.childTitle} numberOfLines={2}>{c.title}</Text>
+                    <Ionicons name="chevron-forward" size={18} color={theme.colors.textMuted} />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            <QuizPanel
+              entityType="gavetinhas"
+              entityId={data.id}
+              initialQuiz={data.quiz || []}
+              onSaved={(q) => setData({ ...data, quiz: q })}
+            />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>

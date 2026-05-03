@@ -23,6 +23,12 @@ api_router = APIRouter(prefix="/api")
 
 
 # ---------- Models ----------
+class QuizQuestion(BaseModel):
+    question: str
+    options: List[str] = []
+    correct_index: int = 0
+
+
 class Gavetinha(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     gavetao_id: str
@@ -33,6 +39,7 @@ class Gavetinha(BaseModel):
     images: List[str] = []
     videos: List[str] = []
     pdfs: List[dict] = []  # [{name, data}] data = base64 data URI or URL
+    quiz: List[QuizQuestion] = []
     order: int = 0
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -51,6 +58,7 @@ class GavetinhaUpdate(BaseModel):
     images: Optional[List[str]] = None
     videos: Optional[List[str]] = None
     pdfs: Optional[List[dict]] = None
+    quiz: Optional[List[QuizQuestion]] = None
     order: Optional[int] = None
 
 
@@ -59,6 +67,7 @@ class Gavetao(BaseModel):
     title: str
     subtitle: str = ""
     image_url: str = ""
+    quiz: List[QuizQuestion] = []
     order: int = 0
 
 
@@ -72,6 +81,7 @@ class GavetaoUpdate(BaseModel):
     title: Optional[str] = None
     subtitle: Optional[str] = None
     image_url: Optional[str] = None
+    quiz: Optional[List[QuizQuestion]] = None
     order: Optional[int] = None
 
 
