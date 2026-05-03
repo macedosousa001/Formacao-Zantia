@@ -22,6 +22,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { theme, API_URL } from '../src/theme';
 import PromptModal from '../src/PromptModal';
+import LanguageSelector from '../src/LanguageSelector';
+import { useI18n } from '../src/i18n';
 
 type Gavetao = {
   id: string;
@@ -34,6 +36,7 @@ type Gavetao = {
 
 export default function Home() {
   const router = useRouter();
+  const { t } = useI18n();
   const [gavetoes, setGavetoes] = useState<Gavetao[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -150,18 +153,21 @@ export default function Home() {
             <Text style={styles.logoText}>Z</Text>
           </View>
           <View>
-            <Text style={styles.brand}>ZANTIA</Text>
-            <Text style={styles.brandSub}>FORMAÇÃO</Text>
+            <Text style={styles.brand}>{t('appBrand')}</Text>
+            <Text style={styles.brandSub}>{t('appBrandSub')}</Text>
           </View>
         </View>
-        <TouchableOpacity
-          style={styles.adminBtn}
-          onPress={() => router.push('/admin')}
-          testID="admin-link"
-        >
-          <Ionicons name="settings-outline" size={16} color={theme.colors.secondary} />
-          <Text style={styles.adminBtnText}>Administração</Text>
-        </TouchableOpacity>
+        <View style={styles.headerRight}>
+          <LanguageSelector />
+          <TouchableOpacity
+            style={styles.adminBtn}
+            onPress={() => router.push('/admin')}
+            testID="admin-link"
+          >
+            <Ionicons name="settings-outline" size={16} color={theme.colors.secondary} />
+            <Text style={styles.adminBtnText}>{t('administration')}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ScrollView
@@ -182,12 +188,12 @@ export default function Home() {
             testID="hero-edit-btn"
           >
             <Ionicons name="create-outline" size={16} color="#fff" />
-            <Text style={styles.heroEditText}>Editar capa</Text>
+            <Text style={styles.heroEditText}>{t('heroEditBtn')}</Text>
           </TouchableOpacity>
           <View style={[styles.heroContent, isWide && { paddingHorizontal: 64 }]}>
             <View style={styles.heroTag}>
               <View style={styles.heroDot} />
-              <Text style={styles.heroTagText}>PLATAFORMA DE FORMAÇÃO</Text>
+              <Text style={styles.heroTagText}>{t('heroEyebrow')}</Text>
             </View>
             <Text style={[styles.heroTitle, isWide && { fontSize: 48, maxWidth: 700 }]}>
               {settings.hero_title}
@@ -200,7 +206,7 @@ export default function Home() {
               onPress={() => router.push(`/gavetao/${gavetoes[0]?.id || 'g1'}`)}
               testID="hero-cta-explore"
             >
-              <Text style={styles.heroCtaText}>Explorar Categorias</Text>
+              <Text style={styles.heroCtaText}>{t('heroCta')}</Text>
               <Ionicons name="arrow-forward" size={18} color="#fff" />
             </TouchableOpacity>
           </View>
@@ -210,8 +216,8 @@ export default function Home() {
         <View style={[styles.sectionHeader, isWide && { paddingHorizontal: 64 }]}>
           <View style={styles.sectionHeaderRow}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.sectionEyebrow}>CATÁLOGO TÉCNICO</Text>
-              <Text style={styles.sectionTitle}>{gavetoes.length} áreas de formação</Text>
+              <Text style={styles.sectionEyebrow}>{t('catalogEyebrow')}</Text>
+              <Text style={styles.sectionTitle}>{gavetoes.length} {t('areasOfTraining')}</Text>
             </View>
             <TouchableOpacity
               style={styles.addInlineBtn}
@@ -219,11 +225,11 @@ export default function Home() {
               testID="add-gavetao-btn"
             >
               <Ionicons name="add" size={18} color="#fff" />
-              <Text style={styles.addInlineText}>Novo gavetão</Text>
+              <Text style={styles.addInlineText}>{t('newGavetao')}</Text>
             </TouchableOpacity>
           </View>
           <Text style={styles.sectionDesc}>
-            Conteúdos organizados por categoria. Selecione um gavetão para aceder às fichas técnicas, imagens e vídeos.
+            {t('catalogDesc')}
           </Text>
         </View>
 
@@ -251,7 +257,7 @@ export default function Home() {
                   <Text style={styles.cardSubtitle}>{g.subtitle}</Text>
                   <View style={styles.cardFooter}>
                     <Text style={styles.cardCount}>
-                      {g.gavetinhas?.length || 0} {g.gavetinhas?.length === 1 ? 'item' : 'itens'}
+                      {g.gavetinhas?.length || 0} {g.gavetinhas?.length === 1 ? t('item') : t('items')}
                     </Text>
                     <View style={styles.cardArrow}>
                       <Ionicons name="arrow-forward" size={16} color="#fff" />
@@ -264,17 +270,18 @@ export default function Home() {
         )}
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>© Zantia Formação · Plataforma interna</Text>
+          <Text style={styles.footerText}>{t('footer')}</Text>
         </View>
       </ScrollView>
 
       <PromptModal
         visible={showCreate}
-        title="Novo Gavetão"
-        placeholder="Nome da categoria"
+        title={t('newGavetaoTitle')}
+        placeholder={t('newGavetaoPlaceholder')}
         subtitleField
         onCancel={() => setShowCreate(false)}
         onSubmit={createGavetao}
+        submitLabel={t('create')}
       />
 
       {/* Hero edit modal */}
@@ -377,6 +384,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: theme.colors.border, borderRadius: 4,
   },
   adminBtnText: { fontSize: 12, fontWeight: '700', color: theme.colors.secondary, letterSpacing: 0.5 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   addInlineBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
