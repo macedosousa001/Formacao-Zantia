@@ -297,6 +297,9 @@ export default function Home() {
               <Ionicons name="image-outline" size={16} color="#fff" />
               <Text style={styles.uploadSmallText}>Carregar do dispositivo</Text>
             </TouchableOpacity>
+            <Text style={styles.sizeHint}>
+              📐 Recomendado: 1600 × 900 px (16:9, paisagem) · até 2 MB
+            </Text>
             <TextInput
               style={[styles.modalInput, { marginTop: 8 }]}
               value={draftImage}
@@ -312,6 +315,8 @@ export default function Home() {
               value={draftTitle}
               onChangeText={setDraftTitle}
               multiline
+              spellCheck
+              autoCorrect
               testID="hero-title-input"
             />
 
@@ -321,6 +326,8 @@ export default function Home() {
               value={draftSubtitle}
               onChangeText={setDraftSubtitle}
               multiline
+              spellCheck
+              autoCorrect
               testID="hero-subtitle-input"
             />
 
@@ -528,4 +535,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary, borderRadius: 4,
   },
   modalBtnPrimaryText: { color: '#fff', fontWeight: '700' },
+  sizeHint: {
+    marginTop: 6, fontSize: 11, color: theme.colors.textMuted,
+    fontStyle: 'italic', letterSpacing: 0.3,
+  },
 });

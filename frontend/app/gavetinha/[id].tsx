@@ -318,6 +318,9 @@ export default function GavetinhaScreen() {
                     <Ionicons name="cloud-upload-outline" size={18} color="#fff" />
                     <Text style={styles.uploadBtnText}>Adicionar imagem</Text>
                   </TouchableOpacity>
+                  <Text style={styles.sizeHint}>
+                    📐 Recomendado: 1200 × 900 px (4:3) · até 2 MB
+                  </Text>
                   {images.length > 0 && (
                     <View style={{ marginTop: 10 }}>
                       <Text style={styles.labelSmall}>Gerir imagens ({images.length})</Text>
@@ -454,6 +457,8 @@ export default function GavetinhaScreen() {
                     style={styles.input}
                     value={title}
                     onChangeText={setTitle}
+                    spellCheck
+                    autoCorrect
                     testID="title-input"
                   />
                   <Text style={[styles.label, { marginTop: 14 }]}>Descrição</Text>
@@ -462,6 +467,8 @@ export default function GavetinhaScreen() {
                     value={description}
                     onChangeText={setDescription}
                     multiline
+                    spellCheck
+                    autoCorrect
                     textAlignVertical="top"
                     testID="description-input"
                   />
@@ -473,6 +480,8 @@ export default function GavetinhaScreen() {
                     placeholder="Potência, dimensões, certificações..."
                     placeholderTextColor={theme.colors.textLight}
                     multiline
+                    spellCheck
+                    autoCorrect
                     textAlignVertical="top"
                     testID="specs-input"
                   />
@@ -717,4 +726,8 @@ const styles = StyleSheet.create({
   pdfInfo: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10 },
   pdfName: { flex: 1, fontSize: 13, fontWeight: '600', color: theme.colors.textMain },
   pdfRemove: { padding: 6, borderRadius: 4, backgroundColor: '#FEF2F2' },
+  sizeHint: {
+    marginTop: 6, fontSize: 11, color: theme.colors.textMuted,
+    fontStyle: 'italic', letterSpacing: 0.3,
+  },
 });

@@ -63,6 +63,8 @@ export default function PromptModal({
             value={val}
             onChangeText={setVal}
             autoFocus
+            spellCheck
+            autoCorrect
             testID="prompt-input"
           />
           {subtitleField && (
@@ -72,6 +74,8 @@ export default function PromptModal({
               placeholderTextColor={theme.colors.textLight}
               value={sub}
               onChangeText={setSub}
+              spellCheck
+              autoCorrect
               testID="prompt-subtitle-input"
             />
           )}

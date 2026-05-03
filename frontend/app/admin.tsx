@@ -300,6 +300,8 @@ export default function Admin() {
               style={styles.modalInput}
               value={editTitle}
               onChangeText={setEditTitle}
+              spellCheck
+              autoCorrect
               testID="edit-title-input"
             />
 
@@ -308,6 +310,8 @@ export default function Admin() {
               style={styles.modalInput}
               value={editSubtitle}
               onChangeText={setEditSubtitle}
+              spellCheck
+              autoCorrect
               testID="edit-subtitle-input"
             />
 
@@ -321,6 +325,9 @@ export default function Admin() {
                 <Text style={styles.uploadSmallText}>Carregar imagem</Text>
               </TouchableOpacity>
             </View>
+            <Text style={styles.sizeHint}>
+              📐 Recomendado: 800 × 500 px (16:10, paisagem) · até 1 MB
+            </Text>
             <TextInput
               style={[styles.modalInput, { marginTop: 8 }]}
               value={editImage}
@@ -431,4 +438,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary, borderRadius: 4,
   },
   modalBtnPrimaryText: { color: '#fff', fontWeight: '700' },
+  sizeHint: {
+    marginTop: 6, fontSize: 11, color: theme.colors.textMuted,
+    fontStyle: 'italic', letterSpacing: 0.3,
+  },
 });
