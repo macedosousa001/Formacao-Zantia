@@ -85,6 +85,24 @@ class GavetaoUpdate(BaseModel):
     order: Optional[int] = None
 
 
+# ---------- Site Settings ----------
+DEFAULT_HERO_IMAGE = "https://images.unsplash.com/photo-1509391366360-2e959784a276?w=1600&q=80"
+DEFAULT_HERO_TITLE = "Energia &\nClimatização"
+DEFAULT_HERO_SUBTITLE = "Fotovoltaico · Bombas de Calor · Caldeiras · Ar Condicionado · Acessórios"
+
+
+class Settings(BaseModel):
+    hero_image: str = DEFAULT_HERO_IMAGE
+    hero_title: str = DEFAULT_HERO_TITLE
+    hero_subtitle: str = DEFAULT_HERO_SUBTITLE
+
+
+class SettingsUpdate(BaseModel):
+    hero_image: Optional[str] = None
+    hero_title: Optional[str] = None
+    hero_subtitle: Optional[str] = None
+
+
 class GavetaoWithChildren(Gavetao):
     gavetinhas: List[Gavetinha] = []
 
@@ -140,6 +158,27 @@ async def root():
 async def seed_endpoint():
     await seed_database()
     return {"status": "ok"}
+
+
+# ----- Settings -----
+@api_router.get("/settings", response_model=Settings)
+async def get_settings():
+    s = await db.settings.find_one({"_id": "site"}, {"_id": 0})
+    if not s:
+        return Settings()
+    return Settings(**s)
+
+
+@api_router.put("/settings", response_model=Settings)
+async def update_settings(payload: SettingsUpdate):
+    update = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not update:
+        raise HTTPException(status_code=400, detail="Nada para atualizar")
+    await db.settings.update_one(
+        {"_id": "site"}, {"$set": update}, upsert=True
+    )
+    s = await db.settings.find_one({"_id": "site"}, {"_id": 0})
+    return Settings(**(s or {}))
 
 
 # ----- Gavetões -----

@@ -10,10 +10,16 @@ import {
   ActivityIndicator,
   RefreshControl,
   useWindowDimensions,
+  Modal,
+  TextInput,
+  Alert,
+  Platform,
+  KeyboardAvoidingView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { theme, API_URL } from '../src/theme';
 import PromptModal from '../src/PromptModal';
 
@@ -32,15 +38,30 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
+  const [settings, setSettings] = useState({
+    hero_image: '',
+    hero_title: 'Energia &\nClimatização',
+    hero_subtitle: 'Fotovoltaico · Bombas de Calor · Caldeiras · Ar Condicionado · Acessórios',
+  });
+  const [editHero, setEditHero] = useState(false);
+  const [draftImage, setDraftImage] = useState('');
+  const [draftTitle, setDraftTitle] = useState('');
+  const [draftSubtitle, setDraftSubtitle] = useState('');
+  const [savingHero, setSavingHero] = useState(false);
   const { width } = useWindowDimensions();
   const isWide = width >= 768;
   const columns = isWide ? (width >= 1200 ? 3 : 2) : 1;
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/gavetoes`);
-      const data = await res.json();
+      const [resG, resS] = await Promise.all([
+        fetch(`${API_URL}/gavetoes`),
+        fetch(`${API_URL}/settings`),
+      ]);
+      const data = await resG.json();
+      const s = await resS.json();
       setGavetoes(data);
+      setSettings(s);
     } catch (e) {
       console.log('load error', e);
     } finally {
@@ -103,21 +124,29 @@ export default function Home() {
       >
         {/* Hero */}
         <ImageBackground
-          source={{ uri: 'https://images.unsplash.com/photo-1509391366360-2e959784a276?w=1600&q=80' }}
+          source={{ uri: settings.hero_image || 'https://images.unsplash.com/photo-1509391366360-2e959784a276?w=1600&q=80' }}
           style={[styles.hero, { minHeight: isWide ? 420 : 340 }]}
           testID="hero-section"
         >
           <View style={styles.heroOverlay} />
+          <TouchableOpacity
+            style={styles.heroEditBtn}
+            onPress={openHeroEdit}
+            testID="hero-edit-btn"
+          >
+            <Ionicons name="create-outline" size={16} color="#fff" />
+            <Text style={styles.heroEditText}>Editar capa</Text>
+          </TouchableOpacity>
           <View style={[styles.heroContent, isWide && { paddingHorizontal: 64 }]}>
             <View style={styles.heroTag}>
               <View style={styles.heroDot} />
               <Text style={styles.heroTagText}>PLATAFORMA DE FORMAÇÃO</Text>
             </View>
             <Text style={[styles.heroTitle, isWide && { fontSize: 48, maxWidth: 700 }]}>
-              Energia &{'\n'}Climatização
+              {settings.hero_title}
             </Text>
             <Text style={[styles.heroSubtitle, isWide && { maxWidth: 600 }]}>
-              Fotovoltaico · Bombas de Calor · Caldeiras · Ar Condicionado · Acessórios
+              {settings.hero_subtitle}
             </Text>
             <TouchableOpacity
               style={styles.heroCta}
@@ -200,6 +229,78 @@ export default function Home() {
         onCancel={() => setShowCreate(false)}
         onSubmit={createGavetao}
       />
+
+      {/* Hero edit modal */}
+      <Modal transparent visible={editHero} animationType="fade" onRequestClose={() => setEditHero(false)}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          style={styles.modalBackdrop}
+        >
+          <ScrollView style={styles.modalCard} contentContainerStyle={{ padding: 20 }}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Editar capa de entrada</Text>
+              <TouchableOpacity onPress={() => setEditHero(false)} testID="hero-edit-close">
+                <Ionicons name="close" size={22} color={theme.colors.secondary} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalLabel}>Imagem</Text>
+            {!!draftImage && <Image source={{ uri: draftImage }} style={styles.heroPreview} />}
+            <TouchableOpacity style={styles.uploadSmall} onPress={pickHeroImage} testID="hero-pick-image">
+              <Ionicons name="image-outline" size={16} color="#fff" />
+              <Text style={styles.uploadSmallText}>Carregar do dispositivo</Text>
+            </TouchableOpacity>
+            <TextInput
+              style={[styles.modalInput, { marginTop: 8 }]}
+              value={draftImage}
+              onChangeText={setDraftImage}
+              placeholder="Ou cole um URL de imagem"
+              placeholderTextColor={theme.colors.textLight}
+              testID="hero-image-url"
+            />
+
+            <Text style={[styles.modalLabel, { marginTop: 16 }]}>Título</Text>
+            <TextInput
+              style={[styles.modalInput, { minHeight: 60 }]}
+              value={draftTitle}
+              onChangeText={setDraftTitle}
+              multiline
+              testID="hero-title-input"
+            />
+
+            <Text style={[styles.modalLabel, { marginTop: 12 }]}>Subtítulo</Text>
+            <TextInput
+              style={[styles.modalInput, { minHeight: 60 }]}
+              value={draftSubtitle}
+              onChangeText={setDraftSubtitle}
+              multiline
+              testID="hero-subtitle-input"
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.modalBtnOutline}
+                onPress={() => setEditHero(false)}
+                disabled={savingHero}
+              >
+                <Text style={styles.modalBtnOutlineText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalBtnPrimary, savingHero && { opacity: 0.6 }]}
+                onPress={saveHero}
+                disabled={savingHero}
+                testID="hero-save"
+              >
+                {savingHero ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.modalBtnPrimaryText}>Guardar</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -328,4 +429,56 @@ const styles = StyleSheet.create({
 
   footer: { paddingVertical: theme.spacing.xl, alignItems: 'center' },
   footerText: { fontSize: 12, color: theme.colors.textLight, letterSpacing: 1 },
+  heroEditBtn: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.4)',
+    borderRadius: 4,
+    zIndex: 5,
+  },
+  heroEditText: { color: '#fff', fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
+  modalBackdrop: {
+    flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    alignItems: 'center', justifyContent: 'center', padding: 20,
+  },
+  modalCard: {
+    width: '100%', maxWidth: 520, maxHeight: '90%',
+    backgroundColor: '#fff', borderRadius: 10,
+  },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
+  modalTitle: { fontSize: 18, fontWeight: '800', color: theme.colors.secondary },
+  modalLabel: { fontSize: 13, fontWeight: '700', color: theme.colors.secondary, marginBottom: 6 },
+  modalInput: {
+    borderWidth: 1, borderColor: theme.colors.border, borderRadius: 6,
+    paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, color: theme.colors.textMain,
+  },
+  heroPreview: {
+    width: '100%', aspectRatio: 16 / 9, borderRadius: 6,
+    backgroundColor: theme.colors.surfaceAlt, marginBottom: 8,
+  },
+  uploadSmall: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: theme.colors.secondary, paddingVertical: 10, paddingHorizontal: 14,
+    borderRadius: 4, alignSelf: 'flex-start',
+  },
+  uploadSmallText: { color: '#fff', fontWeight: '700', fontSize: 13 },
+  modalActions: { flexDirection: 'row', gap: 10, marginTop: 20 },
+  modalBtnOutline: {
+    flex: 1, paddingVertical: 12, alignItems: 'center',
+    borderWidth: 1, borderColor: theme.colors.secondary, borderRadius: 4,
+  },
+  modalBtnOutlineText: { color: theme.colors.secondary, fontWeight: '700' },
+  modalBtnPrimary: {
+    flex: 1, paddingVertical: 12, alignItems: 'center',
+    backgroundColor: theme.colors.primary, borderRadius: 4,
+  },
+  modalBtnPrimaryText: { color: '#fff', fontWeight: '700' },
 });
