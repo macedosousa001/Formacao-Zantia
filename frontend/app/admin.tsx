@@ -25,6 +25,7 @@ export default function Admin() {
   const [editSubtitle, setEditSubtitle] = useState('');
   const [editImage, setEditImage] = useState('');
   const [savingEdit, setSavingEdit] = useState(false);
+  const [renameGavetinha, setRenameGavetinha] = useState<{ id: string; title: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -126,6 +127,22 @@ export default function Admin() {
     }
   };
 
+  const submitRenameGavetinha = async (newTitle: string) => {
+    if (!renameGavetinha) return;
+    const id = renameGavetinha.id;
+    setRenameGavetinha(null);
+    try {
+      await fetch(`${API_URL}/gavetinhas/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newTitle }),
+      });
+      load();
+    } catch {
+      Alert.alert('Erro', 'Não foi possível renomear.');
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.topbar}>
@@ -216,6 +233,13 @@ export default function Admin() {
                         </Text>
                       </TouchableOpacity>
                       <TouchableOpacity
+                        onPress={() => setRenameGavetinha({ id: gv.id, title: gv.title })}
+                        style={[styles.childDel, { backgroundColor: '#FFF7ED' }]}
+                        testID={`admin-rename-gavetinha-${gv.id}`}
+                      >
+                        <Ionicons name="create-outline" size={16} color={theme.colors.accent} />
+                      </TouchableOpacity>
+                      <TouchableOpacity
                         onPress={() => delGavetinha(gv.id, gv.title)}
                         style={styles.childDel}
                         testID={`admin-del-gavetinha-${gv.id}`}
@@ -245,6 +269,16 @@ export default function Admin() {
         placeholder="Nome do item"
         onCancel={() => setCreateGavetaoId(null)}
         onSubmit={createGavetinha}
+      />
+
+      <PromptModal
+        visible={!!renameGavetinha}
+        title="Renomear gavetinha"
+        placeholder="Novo título"
+        initialValue={renameGavetinha?.title || ''}
+        submitLabel="Guardar"
+        onCancel={() => setRenameGavetinha(null)}
+        onSubmit={submitRenameGavetinha}
       />
 
       {/* Edit gavetao modal */}
