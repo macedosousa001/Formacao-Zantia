@@ -55,6 +55,7 @@ export default function GavetaoScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const [data, setData] = useState<Gavetao | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
   const { width } = useWindowDimensions();
   const isWide = width >= 768;
   const columns = isWide ? (width >= 1200 ? 4 : 3) : 2;
