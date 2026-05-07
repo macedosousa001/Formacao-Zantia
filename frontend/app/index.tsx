@@ -161,14 +161,47 @@ export default function Home() {
         </View>
         <View style={styles.headerRight}>
           <LanguageSelector />
-          <TouchableOpacity
-            style={styles.adminBtn}
-            onPress={() => router.push('/admin')}
-            testID="admin-link"
-          >
-            <Ionicons name="settings-outline" size={16} color={theme.colors.secondary} />
-            <Text style={styles.adminBtnText}>{t('administration')}</Text>
-          </TouchableOpacity>
+          {isAuthed ? (
+            <>
+              <TouchableOpacity
+                style={styles.userBadge}
+                onPress={() => router.push('/perfil')}
+                testID="profile-link"
+              >
+                <Ionicons name="person-circle-outline" size={18} color={theme.colors.secondary} />
+                <Text style={styles.userBadgeText} numberOfLines={1}>
+                  {user?.name || user?.email}
+                </Text>
+                {(user?.score_total || 0) > 0 && (
+                  <View style={styles.scorePill}>
+                    <Text style={styles.scorePillText}>{user?.score_total}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              {isAdmin && (
+                <TouchableOpacity
+                  style={styles.adminBtn}
+                  onPress={() => router.push('/admin')}
+                  testID="admin-link"
+                >
+                  <Ionicons name="settings-outline" size={16} color={theme.colors.secondary} />
+                  <Text style={styles.adminBtnText}>{t('administration')}</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={styles.logoutBtn} onPress={() => logout()} testID="logout-btn">
+                <Ionicons name="log-out-outline" size={16} color={theme.colors.secondary} />
+              </TouchableOpacity>
+            </>
+          ) : (
+            <TouchableOpacity
+              style={styles.loginBtn}
+              onPress={() => router.push('/login')}
+              testID="login-link"
+            >
+              <Ionicons name="log-in-outline" size={16} color="#fff" />
+              <Text style={styles.loginBtnText}>Entrar</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
 
@@ -177,6 +210,46 @@ export default function Home() {
         contentContainerStyle={{ paddingBottom: 60 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={theme.colors.primary} />}
       >
+        {isAuthed && user?.status === 'pending' && (
+          <View style={styles.pendingBanner} testID="pending-banner">
+            <Ionicons name="time-outline" size={28} color="#92400E" />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.pendingTitle}>Conta pendente de aprovação</Text>
+              <Text style={styles.pendingText}>
+                Pode explorar o catálogo, mas para fazer testes e gravar pontos é necessária aprovação do administrador.
+              </Text>
+              <View style={styles.pendingActions}>
+                <TouchableOpacity
+                  style={styles.pendingBtnPrimary}
+                  onPress={() => router.push('/perfil')}
+                  testID="pending-profile-btn"
+                >
+                  <Ionicons name="paper-plane" size={14} color="#fff" />
+                  <Text style={styles.pendingBtnPrimaryText}>Ligar Telegram</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.pendingBtnGhost}
+                  onPress={() => router.push('/perfil')}
+                >
+                  <Text style={styles.pendingBtnGhostText}>Editar dados</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {isAuthed && user?.status === 'rejected' && (
+          <View style={[styles.pendingBanner, { backgroundColor: '#FEE2E2', borderColor: '#FCA5A5' }]}>
+            <Ionicons name="close-circle" size={28} color="#991B1B" />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.pendingTitle, { color: '#991B1B' }]}>Conta rejeitada</Text>
+              <Text style={[styles.pendingText, { color: '#7F1D1D' }]}>
+                A sua conta foi rejeitada pelo administrador. Para mais informações, contacte a Zantia.
+              </Text>
+            </View>
+          </View>
+        )}
+
         {/* Hero */}
         <ImageBackground
           source={{ uri: settings.hero_image || 'https://images.unsplash.com/photo-1509391366360-2e959784a276?w=1600&q=80' }}
@@ -184,15 +257,16 @@ export default function Home() {
           testID="hero-section"
         >
           <View style={styles.heroOverlay} />
-          <TouchableOpacity
-            style={styles.heroEditBtn}
-            onPress={openHeroEdit}
-            testID="hero-edit-btn"
-          >
-            <Ionicons name="create-outline" size={16} color="#fff" />
-            <Text style={styles.heroEditText}>{t('heroEditBtn')}</Text>
-          </TouchableOpacity>
-          <View style={[styles.heroContent, isWide && { paddingHorizontal: 64 }]}>
+          {isAdmin && (
+            <TouchableOpacity
+              style={styles.heroEditBtn}
+              onPress={openHeroEdit}
+              testID="hero-edit-btn"
+            >
+              <Ionicons name="create-outline" size={16} color="#fff" />
+              <Text style={styles.heroEditText}>{t('heroEditBtn')}</Text>
+            </TouchableOpacity>
+          )}          <View style={[styles.heroContent, isWide && { paddingHorizontal: 64 }]}>
             <View style={styles.heroTag}>
               <View style={styles.heroDot} />
               <Text style={styles.heroTagText}>{t('heroEyebrow')}</Text>
@@ -221,14 +295,16 @@ export default function Home() {
               <Text style={styles.sectionEyebrow}>{t('catalogEyebrow')}</Text>
               <Text style={styles.sectionTitle}>{gavetoes.length} {t('areasOfTraining')}</Text>
             </View>
-            <TouchableOpacity
-              style={styles.addInlineBtn}
-              onPress={() => setShowCreate(true)}
-              testID="add-gavetao-btn"
-            >
-              <Ionicons name="add" size={18} color="#fff" />
-              <Text style={styles.addInlineText}>{t('newGavetao')}</Text>
-            </TouchableOpacity>
+            {isAdmin && (
+              <TouchableOpacity
+                style={styles.addInlineBtn}
+                onPress={() => setShowCreate(true)}
+                testID="add-gavetao-btn"
+              >
+                <Ionicons name="add" size={18} color="#fff" />
+                <Text style={styles.addInlineText}>{t('newGavetao')}</Text>
+              </TouchableOpacity>
+            )}
           </View>
           <Text style={styles.sectionDesc}>
             {t('catalogDesc')}
@@ -570,4 +646,22 @@ const styles = StyleSheet.create({
     marginTop: 6, fontSize: 11, color: theme.colors.textMuted,
     fontStyle: 'italic', letterSpacing: 0.3,
   },
+  pendingBanner: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 12,
+    backgroundColor: '#FEF3C7', borderWidth: 1, borderColor: '#FCD34D',
+    margin: 16, padding: 16, borderRadius: 8,
+  },
+  pendingTitle: { fontSize: 15, fontWeight: '800', color: '#92400E' },
+  pendingText: { fontSize: 13, color: '#78350F', marginTop: 4, lineHeight: 18 },
+  pendingActions: { flexDirection: 'row', gap: 10, marginTop: 12, flexWrap: 'wrap' },
+  pendingBtnPrimary: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: '#0088cc', paddingHorizontal: 14, paddingVertical: 9, borderRadius: 4,
+  },
+  pendingBtnPrimaryText: { color: '#fff', fontWeight: '800', fontSize: 13 },
+  pendingBtnGhost: {
+    paddingHorizontal: 14, paddingVertical: 9, borderRadius: 4,
+    borderWidth: 1, borderColor: '#92400E',
+  },
+  pendingBtnGhostText: { color: '#92400E', fontWeight: '700', fontSize: 13 },
 });

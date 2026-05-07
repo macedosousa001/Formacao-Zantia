@@ -13,16 +13,30 @@ import PromptModal from '../src/PromptModal';
 import { useAuth } from '../src/auth';
 
 type Gavetao = { id: string; title: string; subtitle: string; image_url: string; gavetinhas: any[] };
+type AdminUser = {
+  id: string;
+  email: string;
+  name: string;
+  phone?: string;
+  role: 'admin' | 'formando';
+  status: 'pending' | 'approved' | 'rejected';
+  score_total?: number;
+  telegram_chat_id?: string | null;
+};
 
 export default function Admin() {
   const router = useRouter();
-  const { isAdmin, loading: authLoading } = useAuth();
+  const { isAdmin, loading: authLoading, authFetch } = useAuth();
 
   useEffect(() => {
     if (!authLoading && !isAdmin) {
       router.replace('/login');
     }
   }, [authLoading, isAdmin, router]);
+
+  const [tab, setTab] = useState<'gavetoes' | 'pending' | 'users'>('gavetoes');
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [usersLoading, setUsersLoading] = useState(false);
   const [data, setData] = useState<Gavetao[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -43,7 +57,36 @@ export default function Admin() {
     } finally { setLoading(false); }
   }, []);
 
+  const loadUsers = useCallback(async () => {
+    setUsersLoading(true);
+    try {
+      const r = await authFetch('/auth/users');
+      if (r.ok) {
+        setUsers(await r.json());
+      }
+    } finally { setUsersLoading(false); }
+  }, [authFetch]);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { if (isAdmin && (tab === 'pending' || tab === 'users')) loadUsers(); }, [tab, isAdmin, loadUsers]);
+
+  const userAction = async (uid: string, action: 'approve' | 'reject' | 'promote' | 'demote') => {
+    try {
+      const r = await authFetch(`/auth/users/${uid}/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        Alert.alert('Erro', d.detail || 'Ação falhou');
+        return;
+      }
+      loadUsers();
+    } catch {
+      Alert.alert('Erro', 'Erro de rede');
+    }
+  };
 
   const confirmDelete = (msg: string, onOk: () => void) => {
     if (typeof window !== 'undefined' && window.confirm) {
@@ -158,16 +201,50 @@ export default function Admin() {
           <Ionicons name="arrow-back" size={22} color={theme.colors.secondary} />
         </TouchableOpacity>
         <Text style={styles.topbarTitle}>Administração</Text>
+        {tab === 'gavetoes' ? (
+          <TouchableOpacity
+            style={[styles.iconBtn, { backgroundColor: theme.colors.primary }]}
+            onPress={() => setCreateOpen(true)}
+            testID="admin-add-gavetao"
+          >
+            <Ionicons name="add" size={22} color="#fff" />
+          </TouchableOpacity>
+        ) : (
+          <View style={{ width: 40 }} />
+        )}
+      </View>
+
+      {/* Tabs */}
+      <View style={styles.tabs}>
         <TouchableOpacity
-          style={[styles.iconBtn, { backgroundColor: theme.colors.primary }]}
-          onPress={() => setCreateOpen(true)}
-          testID="admin-add-gavetao"
+          style={[styles.tab, tab === 'gavetoes' && styles.tabActive]}
+          onPress={() => setTab('gavetoes')}
+          testID="admin-tab-gavetoes"
         >
-          <Ionicons name="add" size={22} color="#fff" />
+          <Ionicons name="albums-outline" size={16} color={tab === 'gavetoes' ? '#fff' : theme.colors.secondary} />
+          <Text style={[styles.tabText, tab === 'gavetoes' && styles.tabTextActive]}>Gavetões</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, tab === 'pending' && styles.tabActive]}
+          onPress={() => setTab('pending')}
+          testID="admin-tab-pending"
+        >
+          <Ionicons name="time-outline" size={16} color={tab === 'pending' ? '#fff' : theme.colors.secondary} />
+          <Text style={[styles.tabText, tab === 'pending' && styles.tabTextActive]}>
+            Pendentes{users.filter(u => u.status === 'pending').length ? ` (${users.filter(u => u.status === 'pending').length})` : ''}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.tab, tab === 'users' && styles.tabActive]}
+          onPress={() => setTab('users')}
+          testID="admin-tab-users"
+        >
+          <Ionicons name="people-outline" size={16} color={tab === 'users' ? '#fff' : theme.colors.secondary} />
+          <Text style={[styles.tabText, tab === 'users' && styles.tabTextActive]}>Utilizadores</Text>
         </TouchableOpacity>
       </View>
 
-      {loading ? (
+      {tab === 'gavetoes' && (loading ? (
         <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginTop: 40 }} />
       ) : (
         <ScrollView contentContainerStyle={{ padding: theme.spacing.md, paddingBottom: 60 }}>
@@ -260,6 +337,153 @@ export default function Admin() {
               )}
             </View>
           ))}
+        </ScrollView>
+      ))}
+
+      {tab === 'pending' && (
+        <ScrollView contentContainerStyle={{ padding: theme.spacing.md, paddingBottom: 60 }}>
+          <Text style={styles.intro}>
+            Utilizadores aguardando aprovação. Aprove para conceder acesso completo, ou rejeite para bloquear.
+          </Text>
+          {usersLoading ? (
+            <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginTop: 40 }} />
+          ) : (
+            (() => {
+              const pending = users.filter(u => u.status === 'pending');
+              if (pending.length === 0) {
+                return <Text style={styles.emptyText}>Sem utilizadores pendentes.</Text>;
+              }
+              return pending.map(u => (
+                <View key={u.id} style={styles.userCard} testID={`pending-user-${u.id}`}>
+                  <View style={styles.userInfo}>
+                    <View style={styles.userAvatar}>
+                      <Text style={styles.userAvatarText}>{(u.name || u.email).charAt(0).toUpperCase()}</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.userName}>{u.name || u.email}</Text>
+                      <Text style={styles.userMeta}>{u.email}</Text>
+                      {!!u.phone && <Text style={styles.userMeta}>📱 {u.phone}</Text>}
+                    </View>
+                    {u.telegram_chat_id && (
+                      <View style={styles.tgChip}>
+                        <Ionicons name="paper-plane" size={11} color="#fff" />
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.userActions}>
+                    <TouchableOpacity
+                      style={[styles.userBtn, { backgroundColor: '#16A34A' }]}
+                      onPress={() => userAction(u.id, 'approve')}
+                      testID={`approve-${u.id}`}
+                    >
+                      <Ionicons name="checkmark" size={16} color="#fff" />
+                      <Text style={styles.userBtnText}>Aprovar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.userBtn, { backgroundColor: '#991B1B' }]}
+                      onPress={() => userAction(u.id, 'reject')}
+                      testID={`reject-${u.id}`}
+                    >
+                      <Ionicons name="close" size={16} color="#fff" />
+                      <Text style={styles.userBtnText}>Rejeitar</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ));
+            })()
+          )}
+        </ScrollView>
+      )}
+
+      {tab === 'users' && (
+        <ScrollView contentContainerStyle={{ padding: theme.spacing.md, paddingBottom: 60 }}>
+          <Text style={styles.intro}>
+            Lista de todos os utilizadores. Pode promover formandos a admin, ou despromover admins (exceto o admin principal).
+          </Text>
+          {usersLoading ? (
+            <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginTop: 40 }} />
+          ) : users.length === 0 ? (
+            <Text style={styles.emptyText}>Sem utilizadores.</Text>
+          ) : (
+            users.map(u => (
+              <View key={u.id} style={styles.userCard}>
+                <View style={styles.userInfo}>
+                  <View style={[styles.userAvatar, u.role === 'admin' && { backgroundColor: theme.colors.primary }]}>
+                    <Text style={styles.userAvatarText}>{(u.name || u.email).charAt(0).toUpperCase()}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.userName}>{u.name || u.email}</Text>
+                    <Text style={styles.userMeta}>{u.email}</Text>
+                    {!!u.phone && <Text style={styles.userMeta}>📱 {u.phone}</Text>}
+                    <View style={styles.chipRow}>
+                      <View style={[styles.chip, { backgroundColor: u.role === 'admin' ? theme.colors.primary : theme.colors.secondary }]}>
+                        <Text style={styles.chipText}>{u.role === 'admin' ? 'ADMIN' : 'FORMANDO'}</Text>
+                      </View>
+                      <View style={[styles.chip, {
+                        backgroundColor: u.status === 'approved' ? '#16A34A' : u.status === 'pending' ? '#D97706' : '#991B1B',
+                      }]}>
+                        <Text style={styles.chipText}>{(u.status || 'approved').toUpperCase()}</Text>
+                      </View>
+                      {!!u.telegram_chat_id && (
+                        <View style={[styles.chip, { backgroundColor: '#0088cc' }]}>
+                          <Text style={styles.chipText}>TELEGRAM</Text>
+                        </View>
+                      )}
+                      {(u.score_total || 0) > 0 && (
+                        <View style={[styles.chip, { backgroundColor: theme.colors.accent }]}>
+                          <Text style={styles.chipText}>{u.score_total} pts</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+                </View>
+                <View style={styles.userActions}>
+                  {u.status === 'pending' && (
+                    <>
+                      <TouchableOpacity
+                        style={[styles.userBtn, { backgroundColor: '#16A34A' }]}
+                        onPress={() => userAction(u.id, 'approve')}
+                      >
+                        <Text style={styles.userBtnText}>Aprovar</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.userBtn, { backgroundColor: '#991B1B' }]}
+                        onPress={() => userAction(u.id, 'reject')}
+                      >
+                        <Text style={styles.userBtnText}>Rejeitar</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
+                  {u.status === 'rejected' && (
+                    <TouchableOpacity
+                      style={[styles.userBtn, { backgroundColor: '#16A34A' }]}
+                      onPress={() => userAction(u.id, 'approve')}
+                    >
+                      <Text style={styles.userBtnText}>Reativar</Text>
+                    </TouchableOpacity>
+                  )}
+                  {u.role === 'formando' && u.status === 'approved' && (
+                    <TouchableOpacity
+                      style={[styles.userBtn, { backgroundColor: theme.colors.primary }]}
+                      onPress={() => userAction(u.id, 'promote')}
+                    >
+                      <Ionicons name="ribbon-outline" size={14} color="#fff" />
+                      <Text style={styles.userBtnText}>Promover</Text>
+                    </TouchableOpacity>
+                  )}
+                  {u.role === 'admin' && (
+                    <TouchableOpacity
+                      style={[styles.userBtn, { backgroundColor: theme.colors.textMuted }]}
+                      onPress={() => userAction(u.id, 'demote')}
+                    >
+                      <Ionicons name="arrow-down-outline" size={14} color="#fff" />
+                      <Text style={styles.userBtnText}>Despromover</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            ))
+          )}
         </ScrollView>
       )}
 
@@ -450,4 +674,42 @@ const styles = StyleSheet.create({
     marginTop: 6, fontSize: 11, color: theme.colors.textMuted,
     fontStyle: 'italic', letterSpacing: 0.3,
   },
+  tabs: {
+    flexDirection: 'row', backgroundColor: theme.colors.surface,
+    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
+    paddingHorizontal: theme.spacing.md, paddingVertical: 8, gap: 8,
+  },
+  tab: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 4,
+    backgroundColor: theme.colors.surfaceAlt,
+  },
+  tabActive: { backgroundColor: theme.colors.secondary },
+  tabText: { fontSize: 12, fontWeight: '700', color: theme.colors.secondary },
+  tabTextActive: { color: '#fff' },
+  userCard: {
+    backgroundColor: theme.colors.surface, borderWidth: 1, borderColor: theme.colors.border,
+    borderRadius: 8, padding: 14, marginBottom: 10,
+  },
+  userInfo: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  userAvatar: {
+    width: 44, height: 44, borderRadius: 22, backgroundColor: theme.colors.secondary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  userAvatarText: { color: '#fff', fontWeight: '900', fontSize: 18 },
+  userName: { fontSize: 15, fontWeight: '800', color: theme.colors.secondary },
+  userMeta: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
+  chipRow: { flexDirection: 'row', gap: 6, flexWrap: 'wrap', marginTop: 6 },
+  chip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 3 },
+  chipText: { color: '#fff', fontSize: 9, fontWeight: '900', letterSpacing: 0.8 },
+  tgChip: {
+    width: 24, height: 24, borderRadius: 12, backgroundColor: '#0088cc',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  userActions: { flexDirection: 'row', gap: 8, marginTop: 12, flexWrap: 'wrap' },
+  userBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 12, paddingVertical: 8, borderRadius: 4,
+  },
+  userBtnText: { color: '#fff', fontWeight: '800', fontSize: 12 },
 });

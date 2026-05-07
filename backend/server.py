@@ -145,6 +145,20 @@ class UserOut(BaseModel):
     telegram_start_token: str = ""
 
 
+def user_to_out(u: dict) -> "UserOut":
+    return UserOut(
+        id=u["id"],
+        email=u["email"],
+        name=u.get("name", ""),
+        phone=u.get("phone", ""),
+        role=u.get("role", "formando"),
+        status=u.get("status", "approved"),
+        score_total=u.get("score_total", 0),
+        telegram_linked=bool(u.get("telegram_chat_id")),
+        telegram_start_token=u.get("telegram_start_token", ""),
+    )
+
+
 class AuthResponse(BaseModel):
     user: UserOut
     access_token: str
@@ -408,14 +422,10 @@ async def login(payload: LoginRequest):
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(payload.password, user.get("password_hash", "")):
         raise HTTPException(status_code=401, detail="Email ou palavra-passe inválidos")
+    if user.get("status") == "rejected":
+        raise HTTPException(status_code=403, detail="A sua conta foi rejeitada pelo administrador")
     token = create_access_token(user["id"], user["email"], user["role"])
-    return AuthResponse(
-        user=UserOut(
-            id=user["id"], email=user["email"], name=user.get("name", ""),
-            role=user["role"], score_total=user.get("score_total", 0),
-        ),
-        access_token=token,
-    )
+    return AuthResponse(user=user_to_out(user), access_token=token)
 
 
 @auth_router.post("/register", response_model=AuthResponse)
@@ -423,6 +433,9 @@ async def register(payload: RegisterRequest):
     email = payload.email.strip().lower()
     if not email or "@" not in email or len(payload.password) < 6:
         raise HTTPException(status_code=400, detail="Email ou palavra-passe inválidos (mínimo 6 caracteres)")
+    phone = (payload.phone or "").strip()
+    if len(phone) < 6:
+        raise HTTPException(status_code=400, detail="Telemóvel inválido (mínimo 6 dígitos)")
     existing = await db.users.find_one({"email": email})
     if existing:
         raise HTTPException(status_code=400, detail="Email já registado")
@@ -431,27 +444,78 @@ async def register(payload: RegisterRequest):
         "email": email,
         "password_hash": hash_password(payload.password),
         "name": payload.name or email.split("@")[0],
+        "phone": phone,
         "role": "formando",  # public registration always creates trainees
+        "status": "pending",  # requires admin approval
+        "telegram_start_token": telegram_bot.generate_start_token(),
+        "telegram_chat_id": None,
         "created_at": datetime.now(timezone.utc),
         "score_total": 0,
     }
     await db.users.insert_one(user_doc)
+
+    # Notify admin via Telegram (if linked)
+    try:
+        admin_email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+        admin = await db.users.find_one({"email": admin_email})
+        if admin and admin.get("telegram_chat_id"):
+            msg = (
+                f"🆕 <b>Novo registo</b>\n\n"
+                f"Nome: {user_doc['name']}\n"
+                f"Email: {user_doc['email']}\n"
+                f"Telemóvel: {user_doc['phone']}\n\n"
+                f"Aprovação manual necessária."
+            )
+            await telegram_bot.send_message(admin["telegram_chat_id"], msg)
+    except Exception as e:
+        logger.warning("Failed admin telegram notify: %s", e)
+
     token = create_access_token(user_doc["id"], user_doc["email"], user_doc["role"])
-    return AuthResponse(
-        user=UserOut(
-            id=user_doc["id"], email=user_doc["email"], name=user_doc["name"],
-            role=user_doc["role"], score_total=0,
-        ),
-        access_token=token,
-    )
+    return AuthResponse(user=user_to_out(user_doc), access_token=token)
 
 
 @auth_router.get("/me", response_model=UserOut)
 async def me(user: dict = Depends(current_user_dep)):
-    return UserOut(
-        id=user["id"], email=user["email"], name=user.get("name", ""),
-        role=user["role"], score_total=user.get("score_total", 0),
-    )
+    return user_to_out(user)
+
+
+@auth_router.put("/me", response_model=UserOut)
+async def update_me(payload: ProfileUpdate, user: dict = Depends(current_user_dep)):
+    update: dict = {}
+    if payload.name is not None and payload.name.strip():
+        update["name"] = payload.name.strip()
+    if payload.phone is not None:
+        phone = payload.phone.strip()
+        if phone and len(phone) < 6:
+            raise HTTPException(status_code=400, detail="Telemóvel inválido")
+        update["phone"] = phone
+    if payload.password:
+        if len(payload.password) < 6:
+            raise HTTPException(status_code=400, detail="Palavra-passe muito curta (mínimo 6)")
+        update["password_hash"] = hash_password(payload.password)
+    if not update:
+        raise HTTPException(status_code=400, detail="Nada para atualizar")
+    await db.users.update_one({"id": user["id"]}, {"$set": update})
+    fresh = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+    return user_to_out(fresh)
+
+
+@auth_router.get("/telegram-link")
+async def telegram_link(user: dict = Depends(current_user_dep)):
+    """Returns a t.me URL the user can open to link their Telegram chat."""
+    token = user.get("telegram_start_token")
+    if not token:
+        token = telegram_bot.generate_start_token()
+        await db.users.update_one({"id": user["id"]}, {"$set": {"telegram_start_token": token}})
+    bot_username = await telegram_bot.get_bot_username()
+    if not bot_username:
+        raise HTTPException(status_code=500, detail="Telegram bot não configurado")
+    return {
+        "url": f"https://t.me/{bot_username}?start={token}",
+        "bot_username": bot_username,
+        "token": token,
+        "linked": bool(user.get("telegram_chat_id")),
+    }
 
 
 # ----- Quiz attempts -----
@@ -500,75 +564,93 @@ async def list_users(_: dict = Depends(admin_only_dep)):
     return users
 
 
-app.include_router(auth_router)
+# Admin-only: approve / reject / promote / demote a user
+@auth_router.post("/users/{user_id}/action")
+async def admin_user_action(user_id: str, payload: AdminUserAction, _: dict = Depends(admin_only_dep)):
+    target = await db.users.find_one({"id": user_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="Utilizador não encontrado")
+    action = payload.action
+    update: dict = {}
+    notice = ""
+    if action == "approve":
+        update["status"] = "approved"
+        notice = "✅ A sua conta foi <b>aprovada</b>! Já pode aceder à plataforma."
+    elif action == "reject":
+        update["status"] = "rejected"
+        notice = "❌ A sua conta foi <b>rejeitada</b>."
+    elif action == "promote":
+        update["role"] = "admin"
+        update["status"] = "approved"
+        notice = "🎖️ Foi promovido a <b>administrador</b>."
+    elif action == "demote":
+        update["role"] = "formando"
+        notice = "ℹ️ Passou a ter o papel de <b>formando</b>."
+    else:
+        raise HTTPException(status_code=400, detail="Ação inválida")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_credentials=True,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+    await db.users.update_one({"id": user_id}, {"$set": update})
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+    # Notify the user via Telegram if linked
+    if target.get("telegram_chat_id") and notice:
+        try:
+            await telegram_bot.send_message(target["telegram_chat_id"], notice)
+        except Exception as e:
+            logger.warning("Telegram notify user failed: %s", e)
 
-
-@app.on_event("startup")
-async def on_startup():
-    await seed_database()
-    await seed_admin(db)
-    await db.users.create_index("email", unique=True)
-    await db.quiz_attempts.create_index([("user_id", 1), ("completed_at", -1)])
-
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    client.close()
-.post("/quiz-attempts", response_model=QuizAttempt)
-async def submit_quiz_attempt(payload: QuizAttemptCreate, user: dict = Depends(current_user_dep)):
-    attempt = QuizAttempt(
-        user_id=user["id"],
-        entity_type=payload.entity_type,
-        entity_id=payload.entity_id,
-        entity_title=payload.entity_title,
-        score=payload.score,
-        total=payload.total,
-    )
-    await db.quiz_attempts.insert_one(attempt.model_dump())
-    # Increment user score_total
-    await db.users.update_one(
-        {"id": user["id"]},
-        {"$inc": {"score_total": payload.score}},
-    )
-    return attempt
-
-
-@auth_router.get("/quiz-attempts/me")
-async def my_attempts(user: dict = Depends(current_user_dep)):
-    attempts = await db.quiz_attempts.find(
-        {"user_id": user["id"]}, {"_id": 0}
-    ).sort("completed_at", -1).to_list(200)
-    fresh_user = await db.users.find_one({"id": user["id"]}, {"_id": 0, "score_total": 1})
-    total_points = fresh_user.get("score_total", 0) if fresh_user else 0
-    total_questions = sum(a["total"] for a in attempts)
-    avg = (sum(a["score"] for a in attempts) / total_questions * 100) if total_questions else 0
-    return {
-        "attempts": attempts,
-        "score_total": total_points,
-        "tests_taken": len(attempts),
-        "average_percent": round(avg, 1),
-    }
-
-
-# Admin-only: list all users with stats
-@auth_router.get("/users")
-async def list_users(_: dict = Depends(admin_only_dep)):
-    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(500)
-    return users
+    fresh = await db.users.find_one({"id": user_id}, {"_id": 0, "password_hash": 0})
+    return {"status": "ok", "user": fresh}
 
 
 app.include_router(auth_router)
+
+
+# ----- Telegram webhook -----
+telegram_router = APIRouter(prefix="/api/telegram")
+
+
+@telegram_router.post("/webhook")
+async def telegram_webhook(request: Request):
+    """Receives Telegram updates. Handles /start <token> to link chat to a user."""
+    try:
+        data = await request.json()
+    except Exception:
+        return {"ok": True}
+    msg = data.get("message") or data.get("edited_message")
+    if not msg:
+        return {"ok": True}
+    chat = msg.get("chat") or {}
+    chat_id = chat.get("id")
+    text = (msg.get("text") or "").strip()
+    if not chat_id:
+        return {"ok": True}
+    if text.startswith("/start"):
+        parts = text.split(maxsplit=1)
+        token = parts[1].strip() if len(parts) > 1 else ""
+        if token:
+            user = await db.users.find_one({"telegram_start_token": token})
+            if user:
+                await db.users.update_one(
+                    {"id": user["id"]},
+                    {"$set": {"telegram_chat_id": str(chat_id)}},
+                )
+                await telegram_bot.send_message(
+                    chat_id,
+                    f"✅ Olá {user.get('name','')}! O seu Telegram está agora ligado à conta Zantia. "
+                    "Receberá notificações importantes aqui.",
+                )
+                return {"ok": True}
+        await telegram_bot.send_message(
+            chat_id,
+            "👋 Bem-vindo ao Bot Zantia Formação!\n\n"
+            "Para ligar a sua conta, abra a aplicação, vá ao Perfil e toque em <b>Ligar Telegram</b>.",
+        )
+        return {"ok": True}
+    # Non-command messages: silently ignore for MVP
+    return {"ok": True}
+
+
+app.include_router(telegram_router)
 
 app.add_middleware(
     CORSMiddleware,

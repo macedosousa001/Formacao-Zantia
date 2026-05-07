@@ -8,8 +8,12 @@ export type User = {
   id: string;
   email: string;
   name: string;
+  phone: string;
   role: 'admin' | 'formando';
+  status: 'pending' | 'approved' | 'rejected';
   score_total: number;
+  telegram_linked: boolean;
+  telegram_start_token: string;
 };
 
 type AuthContextType = {
@@ -18,8 +22,9 @@ type AuthContextType = {
   loading: boolean;
   isAdmin: boolean;
   isAuthed: boolean;
+  isPending: boolean;
   login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
-  register: (email: string, password: string, name: string) => Promise<{ ok: boolean; error?: string }>;
+  register: (email: string, password: string, name: string, phone: string) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
   authFetch: (path: string, init?: RequestInit) => Promise<Response>;
@@ -83,12 +88,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const register = async (email: string, password: string, name: string) => {
+  const register = async (email: string, password: string, name: string, phone: string) => {
     try {
       const res = await fetch(`${API_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password, name }),
+        body: JSON.stringify({ email, password, name, phone }),
       });
       const data = await res.json();
       if (!res.ok) return { ok: false, error: data.detail || 'Erro de registo' };
@@ -133,6 +138,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         loading,
         isAdmin: user?.role === 'admin',
         isAuthed: !!user,
+        isPending: user?.status === 'pending',
         login,
         register,
         logout,

@@ -19,6 +19,7 @@ export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -28,11 +29,18 @@ export default function LoginScreen() {
       setError('Preencha email e palavra-passe');
       return;
     }
+    if (mode === 'register') {
+      if (!name.trim()) { setError('Indique o seu nome'); return; }
+      if (!phone.trim() || phone.trim().length < 6) {
+        setError('Indique um telemóvel válido (mínimo 6 dígitos)');
+        return;
+      }
+    }
     setLoading(true);
     const res =
       mode === 'login'
         ? await login(email.trim(), password)
-        : await register(email.trim(), password, name.trim());
+        : await register(email.trim(), password, name.trim(), phone.trim());
     setLoading(false);
     if (!res.ok) {
       setError(res.error || 'Erro');
@@ -94,6 +102,16 @@ export default function LoginScreen() {
                     spellCheck
                     autoCorrect
                     testID="login-name"
+                  />
+                  <Text style={styles.label}>Telemóvel</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ex: 912345678"
+                    placeholderTextColor={theme.colors.textLight}
+                    value={phone}
+                    onChangeText={setPhone}
+                    keyboardType="phone-pad"
+                    testID="login-phone"
                   />
                 </>
               )}

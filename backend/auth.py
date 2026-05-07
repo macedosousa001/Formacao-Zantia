@@ -93,6 +93,7 @@ async def seed_admin(db):
     email = os.environ.get("ADMIN_EMAIL", "admin@example.com").strip().lower()
     password = os.environ.get("ADMIN_PASSWORD", "admin123")
     name = os.environ.get("ADMIN_NAME", "Admin")
+    phone = os.environ.get("ADMIN_PHONE", "")
     existing = await db.users.find_one({"email": email})
     if existing is None:
         await db.users.insert_one({
@@ -100,13 +101,27 @@ async def seed_admin(db):
             "email": email,
             "password_hash": hash_password(password),
             "name": name,
+            "phone": phone,
             "role": "admin",
+            "status": "approved",
             "created_at": datetime.now(timezone.utc),
             "score_total": 0,
         })
-    elif not verify_password(password, existing.get("password_hash", "")):
-        # Re-hash if env password changed
-        await db.users.update_one(
-            {"email": email},
-            {"$set": {"password_hash": hash_password(password), "name": name}},
-        )
+    else:
+        update = {"name": name}
+        # Make sure admin has the new fields and is approved
+        if not existing.get("status"):
+            update["status"] = "approved"
+        if existing.get("status") == "pending":
+            update["status"] = "approved"
+        if phone and not existing.get("phone"):
+            update["phone"] = phone
+        if not verify_password(password, existing.get("password_hash", "")):
+            update["password_hash"] = hash_password(password)
+        await db.users.update_one({"email": email}, {"$set": update})
+
+    # Backfill: any existing users without status become "approved" so we don't break them
+    await db.users.update_many(
+        {"status": {"$exists": False}},
+        {"$set": {"status": "approved"}},
+    )
