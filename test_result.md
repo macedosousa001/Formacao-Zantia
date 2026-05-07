@@ -297,17 +297,13 @@ agent_communication:
       PUT /me, /telegram-link, /users/{id}/action, /telegram/webhook.
       Webhook is already registered against https://api.telegram.org -> /api/telegram/webhook (bot @ApoioZantiaBot).
       Admin credentials: macedo.sousa001@gmail.com / 448225Ms.
-      Please test:
-      1) Register a new formando with phone -> expect status=pending in response.
-      2) Login as formando with status=pending -> still ok, just status=pending.
-      3) Login admin and call GET /api/auth/users (should return list including the new pending user).
-      4) POST /api/auth/users/{pending_id}/action with {action:"approve"} -> user status becomes approved.
-      5) Try POST /api/auth/users/{x}/action without admin token -> 403.
-      6) GET /api/auth/telegram-link as authenticated user -> returns t.me URL with start token.
-      7) POST /api/telegram/webhook with body {"message":{"chat":{"id":12345},"text":"/start <invalid_token>"}} -> 200 ok, no crash.
-      8) POST /api/telegram/webhook with body {"message":{"chat":{"id":99999},"text":"/start <valid_token>"}} where valid_token is a user's telegram_start_token -> next /api/auth/me for that user should return telegram_linked=true.
-      9) POST /api/auth/quiz-attempts as a pending user -> 403.
-      10) Login as a rejected user -> 403.
+  - agent: "testing"
+    message: |
+      All 28 backend tests passed (file /app/backend_test.py). Confirms register-with-phone, login (admin/pending/rejected), me GET/PUT, telegram-link, users list/admin actions (approve/reject/promote/demote/404/400), quiz attempts gating, telegram webhook /start linking, gavetoes catalog still working, and admin seed has phone+approved.
+  - agent: "main"
+    message: |
+      Added PWA support: app.json has full web manifest fields, /public/sw.js (service worker with cache-first static + network-first navigation, never caches /api/*), /public/manifest.webmanifest, and src/pwa.ts auto-registers SW + injects manifest/theme-color/apple-touch-icon meta on web.
+      Build verified: `yarn build:web` outputs to /app/frontend/dist (6 MB) with 8 static routes, sw.js and manifest.webmanifest copied through. Ready to deploy free to Cloudflare Pages / Netlify / Vercel / GitHub Pages — see /app/memory/DEPLOY_PWA.md.
   - agent: "testing"
     message: |
       Backend retest complete — ALL 28 scenarios PASS (see /app/backend_test.py).

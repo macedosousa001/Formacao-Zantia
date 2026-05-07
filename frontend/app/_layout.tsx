@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { I18nProvider } from '../src/i18n';
 import { AuthProvider } from '../src/auth';
+import '../src/pwa'; // PWA service worker registration (web only)
 
 export default function RootLayout() {
   return (
