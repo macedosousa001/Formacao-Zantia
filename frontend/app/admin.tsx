@@ -10,11 +10,19 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { theme, API_URL } from '../src/theme';
 import PromptModal from '../src/PromptModal';
+import { useAuth } from '../src/auth';
 
 type Gavetao = { id: string; title: string; subtitle: string; image_url: string; gavetinhas: any[] };
 
 export default function Admin() {
   const router = useRouter();
+  const { isAdmin, loading: authLoading } = useAuth();
+
+  useEffect(() => {
+    if (!authLoading && !isAdmin) {
+      router.replace('/login');
+    }
+  }, [authLoading, isAdmin, router]);
   const [data, setData] = useState<Gavetao[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});

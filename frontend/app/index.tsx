@@ -24,6 +24,7 @@ import { theme, API_URL } from '../src/theme';
 import PromptModal from '../src/PromptModal';
 import LanguageSelector from '../src/LanguageSelector';
 import { useI18n } from '../src/i18n';
+import { useAuth } from '../src/auth';
 
 type Gavetao = {
   id: string;
@@ -37,6 +38,7 @@ type Gavetao = {
 export default function Home() {
   const router = useRouter();
   const { t } = useI18n();
+  const { user, isAdmin, isAuthed, logout } = useAuth();
   const [gavetoes, setGavetoes] = useState<Gavetao[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -384,7 +386,28 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: theme.colors.border, borderRadius: 4,
   },
   adminBtnText: { fontSize: 12, fontWeight: '700', color: theme.colors.secondary, letterSpacing: 0.5 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
+  loginBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 14, paddingVertical: 8,
+    backgroundColor: theme.colors.primary, borderRadius: 4,
+  },
+  loginBtnText: { color: '#fff', fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
+  userBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: 10, paddingVertical: 6,
+    backgroundColor: theme.colors.surfaceAlt, borderRadius: 4,
+    maxWidth: 220,
+  },
+  userBadgeText: { fontSize: 12, fontWeight: '700', color: theme.colors.secondary, maxWidth: 120 },
+  scorePill: {
+    backgroundColor: theme.colors.secondary, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 3,
+  },
+  scorePillText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  logoutBtn: {
+    width: 32, height: 32, alignItems: 'center', justifyContent: 'center',
+    borderRadius: 4, backgroundColor: theme.colors.surfaceAlt,
+  },
   sectionHeaderRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   addInlineBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 6,

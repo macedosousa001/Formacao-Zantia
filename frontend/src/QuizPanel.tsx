@@ -5,6 +5,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { theme, API_URL } from './theme';
+import { useAuth } from './auth';
 
 export type QuizQuestion = {
   question: string;
@@ -15,11 +16,13 @@ export type QuizQuestion = {
 type Props = {
   entityType: 'gavetoes' | 'gavetinhas';
   entityId: string;
+  entityTitle?: string;
   initialQuiz: QuizQuestion[];
   onSaved?: (quiz: QuizQuestion[]) => void;
 };
 
-export default function QuizPanel({ entityType, entityId, initialQuiz, onSaved }: Props) {
+export default function QuizPanel({ entityType, entityId, entityTitle, initialQuiz, onSaved }: Props) {
+  const { isAdmin, isAuthed, authFetch, refresh } = useAuth();
   const [quiz, setQuiz] = useState<QuizQuestion[]>(initialQuiz);
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -27,6 +30,7 @@ export default function QuizPanel({ entityType, entityId, initialQuiz, onSaved }
   const [taking, setTaking] = useState(false);
   const [answers, setAnswers] = useState<Record<number, number>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [savedAttempt, setSavedAttempt] = useState(false);
 
   useEffect(() => {
     setQuiz(initialQuiz);
@@ -38,8 +42,30 @@ export default function QuizPanel({ entityType, entityId, initialQuiz, onSaved }
     setTaking(true);
   };
 
-  const submitTest = () => {
+  const submitTest = async () => {
     setSubmitted(true);
+    // Record attempt if authenticated
+    if (isAuthed) {
+      try {
+        const res = await authFetch('/auth/quiz-attempts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            entity_type: entityType,
+            entity_id: entityId,
+            entity_title: entityTitle || '',
+            score,
+            total: quiz.length,
+          }),
+        });
+        if (res.ok) {
+          setSavedAttempt(true);
+          await refresh(); // update score_total in user object
+        }
+      } catch {
+        // silent
+      }
+    }
   };
 
   const resetTest = () => {
@@ -118,7 +144,7 @@ export default function QuizPanel({ entityType, entityId, initialQuiz, onSaved }
             {quiz.length} {quiz.length === 1 ? 'pergunta' : 'perguntas'}
           </Text>
         </View>
-        {!editing && !taking && (
+        {!editing && !taking && isAdmin && (
           <TouchableOpacity
             style={styles.editIcon}
             onPress={() => setEditing(true)}
@@ -303,6 +329,16 @@ export default function QuizPanel({ entityType, entityId, initialQuiz, onSaved }
                 <Text style={styles.scorePercent}>
                   {Math.round((score / quiz.length) * 100)}% de acerto
                 </Text>
+                {savedAttempt && (
+                  <Text style={styles.scoreSaved}>
+                    ✓ +{score} pontos adicionados ao seu total
+                  </Text>
+                )}
+                {!isAuthed && (
+                  <Text style={styles.scoreSaved}>
+                    💡 Faça login para guardar a pontuação
+                  </Text>
+                )}
               </View>
               <View style={styles.actionsRow}>
                 <TouchableOpacity style={styles.btnOutline} onPress={resetTest}>
@@ -370,6 +406,7 @@ const styles = StyleSheet.create({
   scoreLabel: { color: '#fff', opacity: 0.7, fontSize: 11, fontWeight: '800', letterSpacing: 2 },
   scoreValue: { color: '#fff', fontSize: 36, fontWeight: '900', marginTop: 4 },
   scorePercent: { color: '#fff', opacity: 0.9, fontSize: 13, marginTop: 2 },
+  scoreSaved: { color: '#fff', fontSize: 12, marginTop: 8, fontStyle: 'italic' },
 
   // Edit
   editCard: {

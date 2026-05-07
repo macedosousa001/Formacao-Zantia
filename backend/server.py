@@ -1,11 +1,11 @@
-from fastapi import FastAPI, APIRouter, HTTPException
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Request, Response
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional
 import uuid
 from datetime import datetime, timezone
@@ -13,6 +13,12 @@ from datetime import datetime, timezone
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
+
+# Local imports after dotenv
+from auth import (
+    hash_password, verify_password, create_access_token,
+    get_current_user_factory, get_optional_user, require_role, seed_admin,
+)
 
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
@@ -101,6 +107,50 @@ class SettingsUpdate(BaseModel):
     hero_image: Optional[str] = None
     hero_title: Optional[str] = None
     hero_subtitle: Optional[str] = None
+
+
+# ---------- Auth Models ----------
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: str = ""
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class UserOut(BaseModel):
+    id: str
+    email: str
+    name: str = ""
+    role: str = "formando"
+    score_total: int = 0
+
+
+class AuthResponse(BaseModel):
+    user: UserOut
+    access_token: str
+
+
+class QuizAttempt(BaseModel):
+    id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    user_id: str
+    entity_type: str  # "gavetoes" or "gavetinhas"
+    entity_id: str
+    entity_title: str = ""
+    score: int
+    total: int
+    completed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+class QuizAttemptCreate(BaseModel):
+    entity_type: str
+    entity_id: str
+    entity_title: str = ""
+    score: int
+    total: int
 
 
 class GavetaoWithChildren(Gavetao):
@@ -322,6 +372,118 @@ async def delete_gavetinha(gavetinha_id: str):
 
 app.include_router(api_router)
 
+# Auth dependency factory
+async def current_user_dep(request: Request):
+    resolver = await get_current_user_factory(db)
+    return await resolver(request)
+
+
+async def admin_only_dep(user: dict = Depends(current_user_dep)):
+    return require_role(user, ["admin"])
+
+
+# ----- Auth endpoints -----
+auth_router = APIRouter(prefix="/api/auth")
+
+
+@auth_router.post("/login", response_model=AuthResponse)
+async def login(payload: LoginRequest):
+    email = payload.email.strip().lower()
+    user = await db.users.find_one({"email": email})
+    if not user or not verify_password(payload.password, user.get("password_hash", "")):
+        raise HTTPException(status_code=401, detail="Email ou palavra-passe inválidos")
+    token = create_access_token(user["id"], user["email"], user["role"])
+    return AuthResponse(
+        user=UserOut(
+            id=user["id"], email=user["email"], name=user.get("name", ""),
+            role=user["role"], score_total=user.get("score_total", 0),
+        ),
+        access_token=token,
+    )
+
+
+@auth_router.post("/register", response_model=AuthResponse)
+async def register(payload: RegisterRequest):
+    email = payload.email.strip().lower()
+    if not email or "@" not in email or len(payload.password) < 6:
+        raise HTTPException(status_code=400, detail="Email ou palavra-passe inválidos (mínimo 6 caracteres)")
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email já registado")
+    user_doc = {
+        "id": str(uuid.uuid4()),
+        "email": email,
+        "password_hash": hash_password(payload.password),
+        "name": payload.name or email.split("@")[0],
+        "role": "formando",  # public registration always creates trainees
+        "created_at": datetime.now(timezone.utc),
+        "score_total": 0,
+    }
+    await db.users.insert_one(user_doc)
+    token = create_access_token(user_doc["id"], user_doc["email"], user_doc["role"])
+    return AuthResponse(
+        user=UserOut(
+            id=user_doc["id"], email=user_doc["email"], name=user_doc["name"],
+            role=user_doc["role"], score_total=0,
+        ),
+        access_token=token,
+    )
+
+
+@auth_router.get("/me", response_model=UserOut)
+async def me(user: dict = Depends(current_user_dep)):
+    return UserOut(
+        id=user["id"], email=user["email"], name=user.get("name", ""),
+        role=user["role"], score_total=user.get("score_total", 0),
+    )
+
+
+# ----- Quiz attempts -----
+@auth_router.post("/quiz-attempts", response_model=QuizAttempt)
+async def submit_quiz_attempt(payload: QuizAttemptCreate, user: dict = Depends(current_user_dep)):
+    attempt = QuizAttempt(
+        user_id=user["id"],
+        entity_type=payload.entity_type,
+        entity_id=payload.entity_id,
+        entity_title=payload.entity_title,
+        score=payload.score,
+        total=payload.total,
+    )
+    await db.quiz_attempts.insert_one(attempt.model_dump())
+    # Increment user score_total
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$inc": {"score_total": payload.score}},
+    )
+    return attempt
+
+
+@auth_router.get("/quiz-attempts/me")
+async def my_attempts(user: dict = Depends(current_user_dep)):
+    attempts = await db.quiz_attempts.find(
+        {"user_id": user["id"]}, {"_id": 0}
+    ).sort("completed_at", -1).to_list(200)
+    fresh_user = await db.users.find_one({"id": user["id"]}, {"_id": 0, "score_total": 1})
+    total_points = fresh_user.get("score_total", 0) if fresh_user else 0
+    total_questions = sum(a["total"] for a in attempts)
+    avg = (sum(a["score"] for a in attempts) / total_questions * 100) if total_questions else 0
+    return {
+        "attempts": attempts,
+        "score_total": total_points,
+        "tests_taken": len(attempts),
+        "average_percent": round(avg, 1),
+    }
+
+
+# Admin-only: list all users with stats
+@auth_router.get("/users")
+async def list_users(_: dict = Depends(admin_only_dep)):
+    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(500)
+    return users
+
+
+app.include_router(auth_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -337,6 +499,9 @@ logger = logging.getLogger(__name__)
 @app.on_event("startup")
 async def on_startup():
     await seed_database()
+    await seed_admin(db)
+    await db.users.create_index("email", unique=True)
+    await db.quiz_attempts.create_index([("user_id", 1), ("completed_at", -1)])
 
 
 @app.on_event("shutdown")
