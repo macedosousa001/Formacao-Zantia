@@ -19,6 +19,7 @@ from auth import (
     hash_password, verify_password, create_access_token,
     get_current_user_factory, get_optional_user, require_role, seed_admin,
 )
+import telegram_bot
 
 mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
@@ -114,6 +115,7 @@ class RegisterRequest(BaseModel):
     email: str
     password: str
     name: str = ""
+    phone: str = ""
 
 
 class LoginRequest(BaseModel):
@@ -121,12 +123,26 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class ProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    password: Optional[str] = None
+
+
+class AdminUserAction(BaseModel):
+    action: str  # "approve" | "reject" | "promote" | "demote"
+
+
 class UserOut(BaseModel):
     id: str
     email: str
     name: str = ""
+    phone: str = ""
     role: str = "formando"
+    status: str = "approved"  # pending | approved | rejected
     score_total: int = 0
+    telegram_linked: bool = False
+    telegram_start_token: str = ""
 
 
 class AuthResponse(BaseModel):
@@ -440,6 +456,76 @@ async def me(user: dict = Depends(current_user_dep)):
 
 # ----- Quiz attempts -----
 @auth_router.post("/quiz-attempts", response_model=QuizAttempt)
+async def submit_quiz_attempt(payload: QuizAttemptCreate, user: dict = Depends(current_user_dep)):
+    if user.get("status") != "approved" and user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Conta pendente de aprovação")
+    attempt = QuizAttempt(
+        user_id=user["id"],
+        entity_type=payload.entity_type,
+        entity_id=payload.entity_id,
+        entity_title=payload.entity_title,
+        score=payload.score,
+        total=payload.total,
+    )
+    await db.quiz_attempts.insert_one(attempt.model_dump())
+    # Increment user score_total
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$inc": {"score_total": payload.score}},
+    )
+    return attempt
+
+
+@auth_router.get("/quiz-attempts/me")
+async def my_attempts(user: dict = Depends(current_user_dep)):
+    attempts = await db.quiz_attempts.find(
+        {"user_id": user["id"]}, {"_id": 0}
+    ).sort("completed_at", -1).to_list(200)
+    fresh_user = await db.users.find_one({"id": user["id"]}, {"_id": 0, "score_total": 1})
+    total_points = fresh_user.get("score_total", 0) if fresh_user else 0
+    total_questions = sum(a["total"] for a in attempts)
+    avg = (sum(a["score"] for a in attempts) / total_questions * 100) if total_questions else 0
+    return {
+        "attempts": attempts,
+        "score_total": total_points,
+        "tests_taken": len(attempts),
+        "average_percent": round(avg, 1),
+    }
+
+
+# Admin-only: list all users with stats
+@auth_router.get("/users")
+async def list_users(_: dict = Depends(admin_only_dep)):
+    users = await db.users.find({}, {"_id": 0, "password_hash": 0}).to_list(500)
+    return users
+
+
+app.include_router(auth_router)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+
+@app.on_event("startup")
+async def on_startup():
+    await seed_database()
+    await seed_admin(db)
+    await db.users.create_index("email", unique=True)
+    await db.quiz_attempts.create_index([("user_id", 1), ("completed_at", -1)])
+
+
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    client.close()
+.post("/quiz-attempts", response_model=QuizAttempt)
 async def submit_quiz_attempt(payload: QuizAttemptCreate, user: dict = Depends(current_user_dep)):
     attempt = QuizAttempt(
         user_id=user["id"],
