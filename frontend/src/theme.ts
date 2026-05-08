@@ -36,4 +36,8 @@ export const theme = {
   },
 };
 
-export const API_URL = `${process.env.EXPO_PUBLIC_BACKEND_URL}/api`;
+const backendHost =
+  process.env.EXPO_PUBLIC_BACKEND_URL ||
+  (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8000');
+
+export const API_URL = `${backendHost}/api`;
