@@ -50,8 +50,7 @@
       "expo-web-browser"
     ],
     "experiments": {
-      "typedRoutes": true,
-      "baseUrl": "/zantia-formacao"
+      "typedRoutes": true
     }
   }
 }

@@ -1,35 +1,31 @@
 /**
  * Registers the PWA service worker and adds the manifest link on Web only.
- * This is a side-effect module imported once from _layout.tsx.
- * All native platforms (iOS/Android) ignore this entirely.
+ * Side-effect module imported once from _layout.tsx.
+ * Native (iOS/Android) ignores this entirely.
  */
 import { Platform } from 'react-native';
 
 if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
-  // 1. Inject the manifest link if not already present.
+  // 1. Inject manifest + meta tags
   try {
-    const hasManifest = !!document.querySelector('link[rel="manifest"]');
-    if (!hasManifest) {
+    if (!document.querySelector('link[rel="manifest"]')) {
       const link = document.createElement('link');
       link.rel = 'manifest';
       link.href = '/manifest.webmanifest';
       document.head.appendChild(link);
     }
-    // Theme color for browser chrome
     if (!document.querySelector('meta[name="theme-color"]')) {
       const meta = document.createElement('meta');
       meta.name = 'theme-color';
       meta.content = '#D92525';
       document.head.appendChild(meta);
     }
-    // Apple touch icon for iOS Safari "Add to home screen"
     if (!document.querySelector('link[rel="apple-touch-icon"]')) {
       const apple = document.createElement('link');
       apple.rel = 'apple-touch-icon';
       apple.href = '/assets/assets/images/icon.png';
       document.head.appendChild(apple);
     }
-    // Apple-mobile-web-app-capable for standalone mode on iOS
     if (!document.querySelector('meta[name="apple-mobile-web-app-capable"]')) {
       const m = document.createElement('meta');
       m.name = 'apple-mobile-web-app-capable';
@@ -46,8 +42,15 @@ if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !=
     console.warn('PWA meta injection failed:', e);
   }
 
-  // 2. Register the service worker (only on production HTTPS / localhost).
+  // 2. Register service worker (HTTPS or localhost only) with auto-reload on update
   if ('serviceWorker' in navigator) {
+    let __reloaded = false;
+    navigator.serviceWorker.addEventListener('message', (e: MessageEvent) => {
+      if (e.data && (e.data as any).type === 'SW_UPDATED' && !__reloaded) {
+        __reloaded = true;
+        setTimeout(() => window.location.reload(), 200);
+      }
+    });
     const isLocal =
       window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
     const isHttps = window.location.protocol === 'https:';
@@ -56,17 +59,24 @@ if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !=
         navigator.serviceWorker
           .register('/sw.js', { scope: '/' })
           .then((reg) => {
-            // Listen for new versions and force-refresh the page.
-            if (reg && reg.update) {
-              reg.update().catch(() => null);
-            }
+            if (reg && reg.update) reg.update().catch(() => null);
+            reg.addEventListener('updatefound', () => {
+              const nw = reg.installing;
+              if (!nw) return;
+              nw.addEventListener('statechange', () => {
+                if (nw.state === 'activated' && navigator.serviceWorker.controller && !__reloaded) {
+                  __reloaded = true;
+                  window.location.reload();
+                }
+              });
+            });
           })
           .catch((err) => console.warn('SW registration failed:', err));
       });
     }
   }
 
-  // 3. Capture install prompt to allow custom UI later if needed.
+  // 3. Capture install prompt for future custom UI
   window.addEventListener('beforeinstallprompt', (e: any) => {
     e.preventDefault();
     (window as any).__zantiaDeferredPrompt = e;
