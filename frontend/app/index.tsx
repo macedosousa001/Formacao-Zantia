@@ -25,6 +25,7 @@ import PromptModal from '../src/PromptModal';
 import LanguageSelector from '../src/LanguageSelector';
 import { useI18n } from '../src/i18n';
 import { useAuth } from '../src/auth';
+import EvolutionChart, { GavetaoComparisonBars } from '../src/EvolutionChart';
 
 type Gavetao = {
   id: string;
@@ -38,7 +39,23 @@ type Gavetao = {
 export default function Home() {
   const router = useRouter();
   const { t } = useI18n();
-  const { user, isAdmin, isAuthed, logout } = useAuth();
+  const { user, isAdmin, isAuthed, logout, authFetch } = useAuth();
+  const [evolution, setEvolution] = useState<any>(null);
+  const [leaderboard, setLeaderboard] = useState<any>(null);
+
+  const loadStats = useCallback(async () => {
+    if (!isAuthed) return;
+    try {
+      const [r1, r2] = await Promise.all([
+        authFetch('/auth/my-evolution'),
+        authFetch('/auth/leaderboard'),
+      ]);
+      if (r1.ok) setEvolution(await r1.json());
+      if (r2.ok) setLeaderboard(await r2.json());
+    } catch {}
+  }, [authFetch, isAuthed]);
+
+  useEffect(() => { loadStats(); }, [loadStats]);
   const [gavetoes, setGavetoes] = useState<Gavetao[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -247,6 +264,75 @@ export default function Home() {
                 A sua conta foi rejeitada pelo administrador. Para mais informações, contacte a Zantia.
               </Text>
             </View>
+          </View>
+        )}
+
+        {isAuthed && user?.status === 'approved' && (
+          <View style={styles.dashboard}>
+            <View style={styles.dashboardHeader}>
+              <Ionicons name="stats-chart" size={18} color={theme.colors.primary} />
+              <Text style={styles.dashboardTitle}>A minha evolução</Text>
+              {leaderboard?.me && (
+                <View style={styles.rankPill}>
+                  <Text style={styles.rankPillText}>#{leaderboard.me.rank} de {leaderboard.total_users}</Text>
+                </View>
+              )}
+            </View>
+
+            {/* Mini stats */}
+            <View style={styles.miniStatsRow}>
+              <View style={styles.miniStat}>
+                <Text style={styles.miniStatValue}>{user.score_total}</Text>
+                <Text style={styles.miniStatLabel}>pontos</Text>
+              </View>
+              <View style={styles.miniStat}>
+                <Text style={styles.miniStatValue}>{leaderboard?.me?.tests_taken ?? 0}</Text>
+                <Text style={styles.miniStatLabel}>testes</Text>
+              </View>
+              <View style={styles.miniStat}>
+                <Text style={styles.miniStatValue}>{leaderboard?.me?.average_percent ?? 0}%</Text>
+                <Text style={styles.miniStatLabel}>média</Text>
+              </View>
+              <View style={styles.miniStat}>
+                <Text style={styles.miniStatValue}>{leaderboard?.average_score ?? 0}</Text>
+                <Text style={styles.miniStatLabel}>média turma</Text>
+              </View>
+            </View>
+
+            <EvolutionChart
+              myPoints={evolution?.my_points || []}
+              globalPoints={evolution?.global_points || []}
+            />
+
+            {evolution?.by_gavetao?.length > 0 && (
+              <>
+                <Text style={styles.subSectionTitle}>Comparação por área (Eu vs Turma)</Text>
+                <GavetaoComparisonBars data={evolution.by_gavetao} />
+              </>
+            )}
+
+            {leaderboard?.ranking?.length > 1 && (
+              <>
+                <Text style={styles.subSectionTitle}>🏆 Ranking</Text>
+                <View style={styles.rankList}>
+                  {leaderboard.ranking.slice(0, 5).map((r: any) => (
+                    <View
+                      key={r.user_id}
+                      style={[styles.rankRow, r.is_me && styles.rankRowMe]}
+                    >
+                      <Text style={styles.rankNumber}>#{r.rank}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.rankName, r.is_me && { fontWeight: '900', color: theme.colors.primary }]}>
+                          {r.name}{r.is_me ? ' (Eu)' : ''}
+                        </Text>
+                        <Text style={styles.rankMeta}>{r.tests_taken} testes · {r.average_percent}% média</Text>
+                      </View>
+                      <Text style={styles.rankScore}>{r.score_total}</Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
           </View>
         )}
 
@@ -664,4 +750,37 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#92400E',
   },
   pendingBtnGhostText: { color: '#92400E', fontWeight: '700', fontSize: 13 },
+  dashboard: {
+    margin: 16, padding: 16, borderRadius: 10,
+    backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.border,
+    gap: 12,
+  },
+  dashboardHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  dashboardTitle: { fontSize: 16, fontWeight: '900', color: theme.colors.secondary, flex: 1 },
+  rankPill: {
+    backgroundColor: theme.colors.primary, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
+  },
+  rankPillText: { color: '#fff', fontWeight: '900', fontSize: 11, letterSpacing: 0.5 },
+  miniStatsRow: { flexDirection: 'row', gap: 8 },
+  miniStat: {
+    flex: 1, backgroundColor: theme.colors.surface, paddingVertical: 10,
+    borderRadius: 6, alignItems: 'center', borderWidth: 1, borderColor: theme.colors.border,
+  },
+  miniStatValue: { fontSize: 18, fontWeight: '900', color: theme.colors.primary },
+  miniStatLabel: { fontSize: 9, color: theme.colors.textMuted, marginTop: 2, letterSpacing: 0.5, textTransform: 'uppercase' },
+  subSectionTitle: { fontSize: 13, fontWeight: '800', color: theme.colors.secondary, marginTop: 6 },
+  rankList: {
+    backgroundColor: theme.colors.surface, borderRadius: 6,
+    borderWidth: 1, borderColor: theme.colors.border, overflow: 'hidden',
+  },
+  rankRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 10,
+    paddingHorizontal: 12, paddingVertical: 10,
+    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
+  },
+  rankRowMe: { backgroundColor: '#FFF7ED' },
+  rankNumber: { width: 32, fontSize: 14, fontWeight: '900', color: theme.colors.secondary, textAlign: 'center' },
+  rankName: { fontSize: 13, fontWeight: '700', color: theme.colors.textMain },
+  rankMeta: { fontSize: 11, color: theme.colors.textMuted, marginTop: 1 },
+  rankScore: { fontSize: 16, fontWeight: '900', color: theme.colors.primary, minWidth: 40, textAlign: 'right' },
 });

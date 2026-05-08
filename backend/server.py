@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field, EmailStr
 from typing import List, Optional
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 
 ROOT_DIR = Path(__file__).parent
@@ -115,7 +115,10 @@ class RegisterRequest(BaseModel):
     email: str
     password: str
     name: str = ""
+    first_name: str = ""
+    last_name: str = ""
     phone: str = ""
+    country: str = ""
 
 
 class LoginRequest(BaseModel):
@@ -125,7 +128,10 @@ class LoginRequest(BaseModel):
 
 class ProfileUpdate(BaseModel):
     name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
     phone: Optional[str] = None
+    country: Optional[str] = None
     password: Optional[str] = None
 
 
@@ -137,12 +143,16 @@ class UserOut(BaseModel):
     id: str
     email: str
     name: str = ""
+    first_name: str = ""
+    last_name: str = ""
     phone: str = ""
+    country: str = ""
     role: str = "formando"
     status: str = "approved"  # pending | approved | rejected
     score_total: int = 0
     telegram_linked: bool = False
     telegram_start_token: str = ""
+    last_seen: Optional[datetime] = None
 
 
 def user_to_out(u: dict) -> "UserOut":
@@ -150,12 +160,16 @@ def user_to_out(u: dict) -> "UserOut":
         id=u["id"],
         email=u["email"],
         name=u.get("name", ""),
+        first_name=u.get("first_name", ""),
+        last_name=u.get("last_name", ""),
         phone=u.get("phone", ""),
+        country=u.get("country", ""),
         role=u.get("role", "formando"),
         status=u.get("status", "approved"),
         score_total=u.get("score_total", 0),
         telegram_linked=bool(u.get("telegram_chat_id")),
         telegram_start_token=u.get("telegram_start_token", ""),
+        last_seen=u.get("last_seen"),
     )
 
 
@@ -405,7 +419,16 @@ app.include_router(api_router)
 # Auth dependency factory
 async def current_user_dep(request: Request):
     resolver = await get_current_user_factory(db)
-    return await resolver(request)
+    user = await resolver(request)
+    # Touch last_seen for online-tracking (best effort, don't block on failures).
+    try:
+        await db.users.update_one(
+            {"id": user["id"]},
+            {"$set": {"last_seen": datetime.now(timezone.utc)}},
+        )
+    except Exception:
+        pass
+    return user
 
 
 async def admin_only_dep(user: dict = Depends(current_user_dep)):
@@ -424,6 +447,12 @@ async def login(payload: LoginRequest):
         raise HTTPException(status_code=401, detail="Email ou palavra-passe inválidos")
     if user.get("status") == "rejected":
         raise HTTPException(status_code=403, detail="A sua conta foi rejeitada pelo administrador")
+    # Mark online on successful login
+    await db.users.update_one(
+        {"id": user["id"]},
+        {"$set": {"last_seen": datetime.now(timezone.utc)}},
+    )
+    user["last_seen"] = datetime.now(timezone.utc)
     token = create_access_token(user["id"], user["email"], user["role"])
     return AuthResponse(user=user_to_out(user), access_token=token)
 
@@ -436,6 +465,16 @@ async def register(payload: RegisterRequest):
     phone = (payload.phone or "").strip()
     if len(phone) < 6:
         raise HTTPException(status_code=400, detail="Telemóvel inválido (mínimo 6 dígitos)")
+    first_name = (payload.first_name or "").strip()
+    last_name = (payload.last_name or "").strip()
+    country = (payload.country or "").strip()
+    if not first_name:
+        raise HTTPException(status_code=400, detail="Indique o primeiro nome")
+    if not last_name:
+        raise HTTPException(status_code=400, detail="Indique o apelido")
+    if not country:
+        raise HTTPException(status_code=400, detail="Indique o país")
+    full_name = f"{first_name} {last_name}".strip() or (payload.name or email.split("@")[0])
     existing = await db.users.find_one({"email": email})
     if existing:
         raise HTTPException(status_code=400, detail="Email já registado")
@@ -443,13 +482,17 @@ async def register(payload: RegisterRequest):
         "id": str(uuid.uuid4()),
         "email": email,
         "password_hash": hash_password(payload.password),
-        "name": payload.name or email.split("@")[0],
+        "name": full_name,
+        "first_name": first_name,
+        "last_name": last_name,
         "phone": phone,
+        "country": country,
         "role": "formando",  # public registration always creates trainees
         "status": "pending",  # requires admin approval
         "telegram_start_token": telegram_bot.generate_start_token(),
         "telegram_chat_id": None,
         "created_at": datetime.now(timezone.utc),
+        "last_seen": datetime.now(timezone.utc),
         "score_total": 0,
     }
     await db.users.insert_one(user_doc)
@@ -461,7 +504,8 @@ async def register(payload: RegisterRequest):
         if admin and admin.get("telegram_chat_id"):
             msg = (
                 f"🆕 <b>Novo registo</b>\n\n"
-                f"Nome: {user_doc['name']}\n"
+                f"Nome: {first_name} {last_name}\n"
+                f"País: {country}\n"
                 f"Email: {user_doc['email']}\n"
                 f"Telemóvel: {user_doc['phone']}\n\n"
                 f"Aprovação manual necessária."
@@ -482,8 +526,18 @@ async def me(user: dict = Depends(current_user_dep)):
 @auth_router.put("/me", response_model=UserOut)
 async def update_me(payload: ProfileUpdate, user: dict = Depends(current_user_dep)):
     update: dict = {}
-    if payload.name is not None and payload.name.strip():
+    if payload.first_name is not None and payload.first_name.strip():
+        update["first_name"] = payload.first_name.strip()
+    if payload.last_name is not None and payload.last_name.strip():
+        update["last_name"] = payload.last_name.strip()
+    if "first_name" in update or "last_name" in update:
+        fn = update.get("first_name", user.get("first_name", ""))
+        ln = update.get("last_name", user.get("last_name", ""))
+        update["name"] = f"{fn} {ln}".strip() or user.get("name", "")
+    elif payload.name is not None and payload.name.strip():
         update["name"] = payload.name.strip()
+    if payload.country is not None:
+        update["country"] = payload.country.strip()
     if payload.phone is not None:
         phone = payload.phone.strip()
         if phone and len(phone) < 6:
@@ -603,6 +657,204 @@ async def admin_user_action(user_id: str, payload: AdminUserAction, _: dict = De
 
 
 app.include_router(auth_router)
+
+
+# ----- Stats / Leaderboard / Online users -----
+stats_router = APIRouter(prefix="/api/auth")
+
+
+def _short_name(u: dict) -> str:
+    fn = (u.get("first_name") or "").strip()
+    ln = (u.get("last_name") or "").strip()
+    if fn and ln:
+        return f"{fn} {ln[0]}."
+    return u.get("name") or u.get("email", "?").split("@")[0]
+
+
+@stats_router.get("/online-users")
+async def online_users(_: dict = Depends(admin_only_dep)):
+    cutoff = datetime.now(timezone.utc) - timedelta(minutes=5)
+    users = await db.users.find(
+        {"last_seen": {"$gte": cutoff}},
+        {"_id": 0, "password_hash": 0},
+    ).sort("last_seen", -1).to_list(200)
+    return {
+        "online_count": len(users),
+        "users": [
+            {
+                "id": u["id"],
+                "name": _short_name(u),
+                "email": u["email"],
+                "country": u.get("country", ""),
+                "role": u.get("role", "formando"),
+                "last_seen": u.get("last_seen"),
+            }
+            for u in users
+        ],
+    }
+
+
+@stats_router.get("/leaderboard")
+async def leaderboard(user: dict = Depends(current_user_dep)):
+    """Public ranking visible to any authed user. Hides emails."""
+    users = await db.users.find(
+        {"status": "approved", "role": "formando"},
+        {"_id": 0, "id": 1, "first_name": 1, "last_name": 1, "name": 1, "email": 1,
+         "country": 1, "score_total": 1},
+    ).to_list(1000)
+
+    # Compute per-user attempt aggregates
+    pipeline = [
+        {"$match": {}},
+        {"$group": {
+            "_id": "$user_id",
+            "tests_taken": {"$sum": 1},
+            "score_sum": {"$sum": "$score"},
+            "total_sum": {"$sum": "$total"},
+        }},
+    ]
+    aggs = {}
+    async for row in db.quiz_attempts.aggregate(pipeline):
+        aggs[row["_id"]] = row
+
+    rows = []
+    for u in users:
+        a = aggs.get(u["id"], {"tests_taken": 0, "score_sum": 0, "total_sum": 0})
+        avg = (a["score_sum"] / a["total_sum"] * 100) if a["total_sum"] else 0
+        rows.append({
+            "user_id": u["id"],
+            "name": _short_name(u),
+            "country": u.get("country", ""),
+            "score_total": u.get("score_total", 0),
+            "tests_taken": a["tests_taken"],
+            "average_percent": round(avg, 1),
+            "is_me": u["id"] == user["id"],
+        })
+
+    # Sort by score_total desc, then tests_taken desc
+    rows.sort(key=lambda r: (r["score_total"], r["tests_taken"]), reverse=True)
+    for i, r in enumerate(rows):
+        r["rank"] = i + 1
+
+    me = next((r for r in rows if r["is_me"]), None)
+    total_attempts = sum(r["tests_taken"] for r in rows)
+    total_score = sum(r["score_total"] for r in rows)
+    avg_score = total_score / len(rows) if rows else 0
+    avg_attempts = total_attempts / len(rows) if rows else 0
+
+    return {
+        "ranking": rows[:20],  # top 20
+        "me": me,
+        "total_users": len(rows),
+        "average_score": round(avg_score, 1),
+        "average_tests_taken": round(avg_attempts, 1),
+    }
+
+
+@stats_router.get("/my-evolution")
+async def my_evolution(user: dict = Depends(current_user_dep)):
+    """Returns my attempt timeline + global average per attempt index for comparison."""
+    my_attempts = await db.quiz_attempts.find(
+        {"user_id": user["id"]},
+        {"_id": 0},
+    ).sort("completed_at", 1).to_list(500)
+
+    my_points = []
+    cumulative_pct = 0.0
+    cumulative_score = 0
+    cumulative_total = 0
+    for i, a in enumerate(my_attempts):
+        pct = (a["score"] / a["total"] * 100) if a["total"] else 0
+        cumulative_score += a["score"]
+        cumulative_total += a["total"]
+        cumulative_pct = (cumulative_score / cumulative_total * 100) if cumulative_total else 0
+        my_points.append({
+            "index": i + 1,
+            "date": a["completed_at"],
+            "title": a.get("entity_title", "Teste"),
+            "score": a["score"],
+            "total": a["total"],
+            "percent": round(pct, 1),
+            "cumulative_percent": round(cumulative_pct, 1),
+        })
+
+    # Global average per attempt index (ordinal): position-by-position average
+    pipeline = [
+        {"$sort": {"user_id": 1, "completed_at": 1}},
+        {"$group": {
+            "_id": "$user_id",
+            "items": {"$push": {"score": "$score", "total": "$total"}},
+        }},
+    ]
+    user_lists: List[List[dict]] = []
+    async for row in db.quiz_attempts.aggregate(pipeline):
+        user_lists.append(row["items"])
+
+    max_len = max((len(lst) for lst in user_lists), default=0)
+    global_points = []
+    for i in range(max_len):
+        sum_s = 0
+        sum_t = 0
+        n = 0
+        for lst in user_lists:
+            if i < len(lst):
+                sum_s += lst[i]["score"]
+                sum_t += lst[i]["total"]
+                n += 1
+        pct = (sum_s / sum_t * 100) if sum_t else 0
+        global_points.append({
+            "index": i + 1,
+            "percent": round(pct, 1),
+            "users_at_or_beyond": n,
+        })
+
+    # Per-gavetão averages (mine vs global)
+    gavetoes = await db.gavetoes.find({}, {"_id": 0, "id": 1, "title": 1}).to_list(100)
+    by_gavetao = []
+    for g in gavetoes:
+        cursor_my = db.quiz_attempts.find(
+            {"user_id": user["id"], "$or": [
+                {"entity_id": g["id"]},
+                {"entity_type": "gavetao", "entity_id": g["id"]},
+            ]},
+            {"_id": 0, "score": 1, "total": 1},
+        )
+        my_s = 0
+        my_t = 0
+        async for a in cursor_my:
+            my_s += a["score"]
+            my_t += a["total"]
+        my_pct = (my_s / my_t * 100) if my_t else None
+
+        cursor_all = db.quiz_attempts.find(
+            {"$or": [
+                {"entity_id": g["id"]},
+                {"entity_type": "gavetao", "entity_id": g["id"]},
+            ]},
+            {"_id": 0, "score": 1, "total": 1},
+        )
+        all_s = 0
+        all_t = 0
+        async for a in cursor_all:
+            all_s += a["score"]
+            all_t += a["total"]
+        all_pct = (all_s / all_t * 100) if all_t else None
+
+        by_gavetao.append({
+            "gavetao_id": g["id"],
+            "title": g["title"],
+            "my_percent": round(my_pct, 1) if my_pct is not None else None,
+            "global_percent": round(all_pct, 1) if all_pct is not None else None,
+        })
+
+    return {
+        "my_points": my_points,
+        "global_points": global_points,
+        "by_gavetao": by_gavetao,
+    }
+
+
+app.include_router(stats_router)
 
 
 # ----- Telegram webhook -----

@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput,
   ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Linking,
+  Modal, Pressable, FlatList,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
@@ -22,6 +23,10 @@ export default function Perfil() {
   const { user, isAuthed, loading: authLoading, refresh, logout, authFetch } = useAuth();
 
   const [name, setName] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [country, setCountry] = useState<Country | undefined>(undefined);
+  const [showCountries, setShowCountries] = useState(false);
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [saving, setSaving] = useState(false);
@@ -29,6 +34,7 @@ export default function Perfil() {
   const [stats, setStats] = useState({ score_total: 0, tests_taken: 0, average_percent: 0 });
   const [tgUrl, setTgUrl] = useState<string | null>(null);
   const [tgLoading, setTgLoading] = useState(false);
+  const [evolution, setEvolution] = useState<any>(null);
 
   useEffect(() => {
     if (!authLoading && !isAuthed) router.replace('/login');
@@ -37,7 +43,11 @@ export default function Perfil() {
   useEffect(() => {
     if (user) {
       setName(user.name || '');
+      setFirstName(user.first_name || '');
+      setLastName(user.last_name || '');
       setPhone(user.phone || '');
+      const c = findCountry(user.country) || findCountry('PT');
+      if (c) setCountry(c);
     }
   }, [user]);
 
@@ -60,10 +70,23 @@ export default function Perfil() {
 
   useEffect(() => { if (isAuthed) loadAttempts(); }, [isAuthed, loadAttempts]);
 
+  // Load evolution data
+  useEffect(() => {
+    if (!isAuthed) return;
+    authFetch('/auth/my-evolution')
+      .then(async (r) => { if (r.ok) setEvolution(await r.json()); })
+      .catch(() => null);
+  }, [isAuthed, authFetch]);
+
   const save = async () => {
     setSaving(true);
     try {
-      const body: any = { name: name.trim(), phone: phone.trim() };
+      const body: any = {
+        first_name: firstName.trim(),
+        last_name: lastName.trim(),
+        country: country?.name || '',
+        phone: phone.trim(),
+      };
       if (password) body.password = password;
       const r = await authFetch('/auth/me', {
         method: 'PUT',
@@ -182,17 +205,44 @@ export default function Perfil() {
           {/* Edit form */}
           <Text style={styles.sectionTitle}>Dados Pessoais</Text>
           <View style={styles.formCard}>
-            <Text style={styles.label}>Nome</Text>
-            <TextInput
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Primeiro nome</Text>
+                <TextInput
+                  style={styles.input}
+                  value={firstName}
+                  onChangeText={setFirstName}
+                  placeholder="Ex: João"
+                  placeholderTextColor={theme.colors.textLight}
+                  spellCheck
+                  autoCorrect
+                  testID="profile-first-name"
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.label}>Apelido</Text>
+                <TextInput
+                  style={styles.input}
+                  value={lastName}
+                  onChangeText={setLastName}
+                  placeholder="Ex: Silva"
+                  placeholderTextColor={theme.colors.textLight}
+                  spellCheck
+                  autoCorrect
+                  testID="profile-last-name"
+                />
+              </View>
+            </View>
+            <Text style={styles.label}>País</Text>
+            <TouchableOpacity
               style={styles.input}
-              value={name}
-              onChangeText={setName}
-              placeholder="O seu nome"
-              placeholderTextColor={theme.colors.textLight}
-              spellCheck
-              autoCorrect
-              testID="profile-name"
-            />
+              onPress={() => setShowCountries(true)}
+              testID="profile-country-picker"
+            >
+              <Text style={{ color: theme.colors.textMain, fontSize: 14 }}>
+                {country?.flag || '🌍'}  {country?.name || 'Selecionar país'}
+              </Text>
+            </TouchableOpacity>
             <Text style={styles.label}>Telemóvel</Text>
             <TextInput
               style={styles.input}
@@ -222,6 +272,23 @@ export default function Perfil() {
               {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnText}>Guardar alterações</Text>}
             </TouchableOpacity>
           </View>
+
+          {/* Evolution chart in profile too */}
+          {evolution && (evolution.my_points?.length > 0 || evolution.global_points?.length > 0) && (
+            <>
+              <Text style={styles.sectionTitle}>Evolução vs Turma</Text>
+              <EvolutionChart
+                myPoints={evolution.my_points || []}
+                globalPoints={evolution.global_points || []}
+              />
+              {evolution.by_gavetao?.length > 0 && (
+                <>
+                  <Text style={styles.sectionTitle}>Por Área</Text>
+                  <GavetaoComparisonBars data={evolution.by_gavetao} />
+                </>
+              )}
+            </>
+          )}
 
           {/* Telegram */}
           <Text style={styles.sectionTitle}>Telegram</Text>
@@ -278,6 +345,38 @@ export default function Perfil() {
           </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
+
+      {/* Country picker modal */}
+      <Modal visible={showCountries} animationType="slide" transparent onRequestClose={() => setShowCountries(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setShowCountries(false)}>
+          <Pressable style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Selecione o país</Text>
+              <TouchableOpacity onPress={() => setShowCountries(false)}>
+                <Ionicons name="close" size={24} color={theme.colors.secondary} />
+              </TouchableOpacity>
+            </View>
+            <FlatList
+              data={COUNTRIES}
+              keyExtractor={(c) => c.code}
+              renderItem={({ item }) => (
+                <TouchableOpacity
+                  style={[styles.countryRow, country?.code === item.code && styles.countryRowActive]}
+                  onPress={() => { setCountry(item); setShowCountries(false); }}
+                >
+                  <Text style={{ fontSize: 22 }}>{item.flag}</Text>
+                  <Text style={[styles.countryText, country?.code === item.code && { fontWeight: '900' }]}>
+                    {item.name}
+                  </Text>
+                  {country?.code === item.code && (
+                    <Ionicons name="checkmark" size={18} color={theme.colors.primary} />
+                  )}
+                </TouchableOpacity>
+              )}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -358,4 +457,22 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#FCA5A5', borderRadius: 4, backgroundColor: '#FEF2F2',
   },
   logoutText: { color: '#991B1B', fontWeight: '800' },
+  modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'flex-end' },
+  modalCard: {
+    backgroundColor: theme.colors.surface, borderTopLeftRadius: 16, borderTopRightRadius: 16,
+    maxHeight: '75%', paddingBottom: 30,
+  },
+  modalHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: 18, paddingVertical: 14,
+    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
+  },
+  modalTitle: { fontSize: 16, fontWeight: '800', color: theme.colors.secondary },
+  countryRow: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    paddingHorizontal: 18, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: theme.colors.border,
+  },
+  countryRowActive: { backgroundColor: theme.colors.surfaceAlt },
+  countryText: { fontSize: 14, color: theme.colors.textMain, flex: 1 },
 });

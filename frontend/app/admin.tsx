@@ -37,6 +37,7 @@ export default function Admin() {
   const [tab, setTab] = useState<'gavetoes' | 'pending' | 'users'>('gavetoes');
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [usersLoading, setUsersLoading] = useState(false);
+  const [online, setOnline] = useState<{ online_count: number; users: any[] }>({ online_count: 0, users: [] });
   const [data, setData] = useState<Gavetao[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
@@ -342,6 +343,20 @@ export default function Admin() {
 
       {tab === 'pending' && (
         <ScrollView contentContainerStyle={{ padding: theme.spacing.md, paddingBottom: 60 }}>
+          <View style={styles.onlineBanner}>
+            <View style={styles.onlineDot} />
+            <Text style={styles.onlineText}>
+              <Text style={{ fontWeight: '900' }}>{online.online_count}</Text> {online.online_count === 1 ? 'utilizador online agora' : 'utilizadores online agora'}
+            </Text>
+            {online.users.slice(0, 3).map((u: any) => (
+              <View key={u.id} style={styles.onlineChip}>
+                <Text style={styles.onlineChipText}>{u.name}</Text>
+              </View>
+            ))}
+            {online.users.length > 3 && (
+              <Text style={styles.onlineMore}>+{online.users.length - 3}</Text>
+            )}
+          </View>
           <Text style={styles.intro}>
             Utilizadores aguardando aprovação. Aprove para conceder acesso completo, ou rejeite para bloquear.
           </Text>
@@ -397,6 +412,20 @@ export default function Admin() {
 
       {tab === 'users' && (
         <ScrollView contentContainerStyle={{ padding: theme.spacing.md, paddingBottom: 60 }}>
+          <View style={styles.onlineBanner}>
+            <View style={styles.onlineDot} />
+            <Text style={styles.onlineText}>
+              <Text style={{ fontWeight: '900' }}>{online.online_count}</Text> online · <Text style={{ fontWeight: '900' }}>{users.length}</Text> total
+            </Text>
+            {online.users.slice(0, 3).map((u: any) => (
+              <View key={u.id} style={styles.onlineChip}>
+                <Text style={styles.onlineChipText}>{u.name}</Text>
+              </View>
+            ))}
+            {online.users.length > 3 && (
+              <Text style={styles.onlineMore}>+{online.users.length - 3}</Text>
+            )}
+          </View>
           <Text style={styles.intro}>
             Lista de todos os utilizadores. Pode promover formandos a admin, ou despromover admins (exceto o admin principal).
           </Text>
@@ -712,4 +741,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12, paddingVertical: 8, borderRadius: 4,
   },
   userBtnText: { color: '#fff', fontWeight: '800', fontSize: 12 },
+  onlineBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+    backgroundColor: '#ECFDF5', borderWidth: 1, borderColor: '#86EFAC',
+    paddingHorizontal: 12, paddingVertical: 10, borderRadius: 6, marginBottom: 12,
+  },
+  onlineDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#16A34A' },
+  onlineText: { fontSize: 12, color: '#065F46', flex: 1 },
+  onlineChip: { backgroundColor: '#16A34A', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10 },
+  onlineChipText: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  onlineMore: { fontSize: 11, color: '#065F46', fontWeight: '700' },
 });
