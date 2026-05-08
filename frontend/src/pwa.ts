@@ -1,12 +1,15 @@
 /**
- * Registers the PWA service worker and adds the manifest link on Web only.
- * Side-effect module imported once from _layout.tsx.
- * Native (iOS/Android) ignores this entirely.
+ * Web-only PWA setup. Após o "kill switch" do SW, decidimos NÃO registar
+ * mais nenhum SW — a app funciona como SPA normal, sem cache, sem
+ * intermediários a interferirem com chamadas API/CORS/Cloudflare.
+ *
+ * Mantemos apenas: manifest link, theme-color e apple-touch-icon
+ * (suficientes para "Add to Home Screen").
  */
 import { Platform } from 'react-native';
 
 if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !== 'undefined') {
-  // 1. Inject manifest + meta tags
+  // Inject manifest + meta tags (no SW)
   try {
     if (!document.querySelector('link[rel="manifest"]')) {
       const link = document.createElement('link');
@@ -42,45 +45,53 @@ if (Platform.OS === 'web' && typeof window !== 'undefined' && typeof document !=
     console.warn('PWA meta injection failed:', e);
   }
 
-  // 2. Register service worker (HTTPS or localhost only) with auto-reload on update
+  // Auto-cleanup: se houver SWs antigos registados, força-os a actualizar
+  // para o kill-switch (que limpa caches e desregista-se), depois reload.
   if ('serviceWorker' in navigator) {
     let __reloaded = false;
-    navigator.serviceWorker.addEventListener('message', (e: MessageEvent) => {
-      if (e.data && (e.data as any).type === 'SW_UPDATED' && !__reloaded) {
-        __reloaded = true;
-        setTimeout(() => window.location.reload(), 200);
-      }
-    });
-    const isLocal =
-      window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    const isHttps = window.location.protocol === 'https:';
-    if (isLocal || isHttps) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker
-          .register('/sw.js', { scope: '/' })
-          .then((reg) => {
-            if (reg && reg.update) reg.update().catch(() => null);
-            reg.addEventListener('updatefound', () => {
-              const nw = reg.installing;
-              if (!nw) return;
-              nw.addEventListener('statechange', () => {
-                if (nw.state === 'activated' && navigator.serviceWorker.controller && !__reloaded) {
-                  __reloaded = true;
-                  window.location.reload();
-                }
-              });
-            });
-          })
-          .catch((err) => console.warn('SW registration failed:', err));
-      });
-    }
-  }
+    const reloadOnce = () => {
+      if (__reloaded) return;
+      __reloaded = true;
+      setTimeout(() => window.location.reload(), 200);
+    };
 
-  // 3. Capture install prompt for future custom UI
-  window.addEventListener('beforeinstallprompt', (e: any) => {
-    e.preventDefault();
-    (window as any).__zantiaDeferredPrompt = e;
-  });
+    navigator.serviceWorker.addEventListener('message', (e: MessageEvent) => {
+      const t = e.data && (e.data as any).type;
+      if (t === 'SW_KILLED' || t === 'SW_UPDATED') reloadOnce();
+    });
+
+    // Verifica SWs antigos e força update; se nenhum estiver registado, não faz nada.
+    (async () => {
+      try {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        if (regs.length === 0) return; // nada a fazer
+        for (const reg of regs) {
+          try {
+            await reg.update();
+            // Carrega o sw.js (kill switch) para que a versão antiga se substitua
+            await fetch('/sw.js?nuke=' + Date.now(), { cache: 'no-cache' });
+          } catch (_) {}
+        }
+        // Após short delay, se ainda houver controller, limpa storage e recarrega.
+        setTimeout(async () => {
+          try {
+            const regsNow = await navigator.serviceWorker.getRegistrations();
+            for (const r of regsNow) {
+              try { await r.unregister(); } catch (_) {}
+            }
+            if ('caches' in window) {
+              try {
+                const ks = await caches.keys();
+                await Promise.all(ks.map((k) => caches.delete(k)));
+              } catch (_) {}
+            }
+          } catch (_) {}
+        }, 1500);
+      } catch (e) {
+        console.warn('SW cleanup failed:', e);
+      }
+    })();
+  }
 }
 
 export {};
