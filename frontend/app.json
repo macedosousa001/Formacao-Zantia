@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Zantia Formação",
-    "slug": "zantia-formacao",
+    "name": "Formação Zantia MS",
+    "slug": "formacao-zantia-ms",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -26,15 +26,16 @@
       "bundler": "metro",
       "output": "static",
       "favicon": "./assets/images/favicon.png",
-      "name": "Zantia Formação",
-      "shortName": "Zantia",
+      "name": "Formação Zantia MS",
+      "shortName": "Zantia MS",
       "lang": "pt",
-      "scope": "/",
+      "scope": "/Formacao-Zantia-Ms",
       "themeColor": "#D92525",
       "backgroundColor": "#1A365D",
       "display": "standalone",
       "orientation": "portrait",
-      "description": "Plataforma de formação técnica Zantia — Energia & Climatização"
+      "description": "Plataforma de formação técnica Zantia — Energia & Climatização",
+      "baseUrl": "/Formacao-Zantia-Ms"
     },
     "plugins": [
       "expo-router",
@@ -51,7 +52,7 @@
     ],
     "experiments": {
       "typedRoutes": true,
-      "baseUrl": "/Formacao-Zantia"
+      "baseUrl": "/Formacao-Zantia-Ms"
     }
   }
 }
