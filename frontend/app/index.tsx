@@ -42,6 +42,7 @@ export default function Home() {
   const { user, isAdmin, isAuthed, logout, authFetch } = useAuth();
   const [evolution, setEvolution] = useState<any>(null);
   const [leaderboard, setLeaderboard] = useState<any>(null);
+  const [unreadChat, setUnreadChat] = useState(0);
 
   const loadStats = useCallback(async () => {
     if (!isAuthed) return;
@@ -192,6 +193,18 @@ export default function Home() {
                 {(user?.score_total || 0) > 0 && (
                   <View style={styles.scorePill}>
                     <Text style={styles.scorePillText}>{user?.score_total}</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.chatBtn}
+                onPress={() => router.push('/chat')}
+                testID="chat-link"
+              >
+                <Ionicons name="chatbubbles-outline" size={18} color={theme.colors.secondary} />
+                {unreadChat > 0 && (
+                  <View style={styles.chatBadge}>
+                    <Text style={styles.chatBadgeText}>{unreadChat}</Text>
                   </View>
                 )}
               </TouchableOpacity>
@@ -783,4 +796,15 @@ const styles = StyleSheet.create({
   rankName: { fontSize: 13, fontWeight: '700', color: theme.colors.textMain },
   rankMeta: { fontSize: 11, color: theme.colors.textMuted, marginTop: 1 },
   rankScore: { fontSize: 16, fontWeight: '900', color: theme.colors.primary, minWidth: 40, textAlign: 'right' },
+  chatBtn: {
+    width: 36, height: 36, borderRadius: 4, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: theme.colors.surfaceAlt, borderWidth: 1, borderColor: theme.colors.border,
+    position: 'relative',
+  },
+  chatBadge: {
+    position: 'absolute', top: -4, right: -4, minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: theme.colors.primary, alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 4, borderWidth: 2, borderColor: theme.colors.surface,
+  },
+  chatBadgeText: { color: '#fff', fontWeight: '900', fontSize: 10 },
 });

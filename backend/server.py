@@ -863,7 +863,8 @@ telegram_router = APIRouter(prefix="/api/telegram")
 
 @telegram_router.post("/webhook")
 async def telegram_webhook(request: Request):
-    """Receives Telegram updates. Handles /start <token> to link chat to a user."""
+    """Receives Telegram updates. Handles /start <token> to link chat,
+    plus free-text messages from linked users -> stored as chat messages."""
     try:
         data = await request.json()
     except Exception:
@@ -876,6 +877,7 @@ async def telegram_webhook(request: Request):
     text = (msg.get("text") or "").strip()
     if not chat_id:
         return {"ok": True}
+
     if text.startswith("/start"):
         parts = text.split(maxsplit=1)
         token = parts[1].strip() if len(parts) > 1 else ""
@@ -889,7 +891,7 @@ async def telegram_webhook(request: Request):
                 await telegram_bot.send_message(
                     chat_id,
                     f"✅ Olá {user.get('name','')}! O seu Telegram está agora ligado à conta Zantia. "
-                    "Receberá notificações importantes aqui.",
+                    "Pode escrever aqui para falar com o administrador.",
                 )
                 return {"ok": True}
         await telegram_bot.send_message(
@@ -898,11 +900,240 @@ async def telegram_webhook(request: Request):
             "Para ligar a sua conta, abra a aplicação, vá ao Perfil e toque em <b>Ligar Telegram</b>.",
         )
         return {"ok": True}
-    # Non-command messages: silently ignore for MVP
+
+    # ===== Free-text message from a linked user → save as chat message =====
+    if not text:
+        return {"ok": True}
+    sender = await db.users.find_one({"telegram_chat_id": str(chat_id)})
+    if not sender:
+        await telegram_bot.send_message(
+            chat_id,
+            "⚠️ A sua conta Telegram não está ligada à plataforma Zantia.\n"
+            "Use /start &lt;código&gt; (obtenha o link no Perfil da app).",
+        )
+        return {"ok": True}
+
+    # Find admin recipient
+    admin_email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+    admin = await db.users.find_one({"email": admin_email})
+    if not admin:
+        return {"ok": True}
+
+    # Save message: sender = telegram user, recipient = admin (if non-admin sender) or first admin
+    if sender["id"] == admin["id"]:
+        # Admin replied via Telegram. We can't tell which formando — ask them to use the app.
+        await telegram_bot.send_message(
+            chat_id,
+            "ℹ️ Para responder a um formando específico, use o chat na app web.",
+        )
+        return {"ok": True}
+
+    message = {
+        "id": str(uuid.uuid4()),
+        "from_user_id": sender["id"],
+        "to_user_id": admin["id"],
+        "from_role": sender.get("role", "formando"),
+        "from_name": sender.get("name", ""),
+        "text": text,
+        "source": "telegram",
+        "sent_at": datetime.now(timezone.utc),
+        "read_at": None,
+    }
+    await db.messages.insert_one(message)
+
+    # Notify admin via Telegram (if admin has chat linked)
+    if admin.get("telegram_chat_id"):
+        try:
+            await telegram_bot.send_message(
+                admin["telegram_chat_id"],
+                f"💬 <b>Nova mensagem de {sender.get('name','?')}</b>\n\n{text[:300]}\n\n"
+                "<i>Responda na app web (Admin → Chat) para o formando receber.</i>",
+            )
+        except Exception:
+            pass
+
+    # ACK to formando
+    await telegram_bot.send_message(
+        chat_id,
+        "✓ Mensagem recebida. O administrador vai responder em breve.",
+    )
     return {"ok": True}
 
 
 app.include_router(telegram_router)
+
+
+# ===== Chat (bidirectional Admin <-> Formando) =====
+chat_router = APIRouter(prefix="/api/chat")
+
+
+class MessageIn(BaseModel):
+    to_user_id: str
+    text: str
+
+
+@chat_router.post("/send")
+async def send_message(payload: MessageIn, user: dict = Depends(current_user_dep)):
+    text = (payload.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Mensagem vazia")
+    target = await db.users.find_one({"id": payload.to_user_id})
+    if not target:
+        raise HTTPException(status_code=404, detail="Destinatário não encontrado")
+
+    # Permission: formandos can only message admins; admins can message anyone
+    if user.get("role") != "admin" and target.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Apenas pode enviar mensagens ao administrador")
+
+    message = {
+        "id": str(uuid.uuid4()),
+        "from_user_id": user["id"],
+        "to_user_id": target["id"],
+        "from_role": user.get("role", "formando"),
+        "from_name": user.get("name", ""),
+        "text": text,
+        "source": "app",
+        "sent_at": datetime.now(timezone.utc),
+        "read_at": None,
+    }
+    await db.messages.insert_one(message)
+
+    # Forward to recipient's Telegram if linked
+    if target.get("telegram_chat_id"):
+        try:
+            sender_label = (
+                f"<b>{user.get('name','Admin')}</b>" if user.get("role") == "admin"
+                else f"<b>{user.get('name','Formando')}</b>"
+            )
+            await telegram_bot.send_message(
+                target["telegram_chat_id"],
+                f"💬 {sender_label}:\n\n{text}",
+            )
+        except Exception:
+            pass
+
+    return {"ok": True, "message": {**message, "_id": None}}
+
+
+@chat_router.get("/conversations")
+async def list_conversations(user: dict = Depends(current_user_dep)):
+    """Returns list of conversations.
+    For admin: list of all formandos that ever sent/received a message OR are approved.
+    For formando: just the admin contact."""
+    if user.get("role") == "admin":
+        # Get all formandos with last-message info
+        formandos = await db.users.find(
+            {"role": "formando"},
+            {"_id": 0, "id": 1, "first_name": 1, "last_name": 1, "name": 1, "email": 1,
+             "country": 1, "status": 1, "telegram_chat_id": 1, "last_seen": 1},
+        ).to_list(500)
+        rows = []
+        for f in formandos:
+            last = await db.messages.find_one(
+                {"$or": [
+                    {"from_user_id": f["id"], "to_user_id": user["id"]},
+                    {"from_user_id": user["id"], "to_user_id": f["id"]},
+                ]},
+                sort=[("sent_at", -1)],
+            )
+            unread = await db.messages.count_documents({
+                "from_user_id": f["id"],
+                "to_user_id": user["id"],
+                "read_at": None,
+            })
+            rows.append({
+                "user_id": f["id"],
+                "name": f.get("name") or f.get("email", "?"),
+                "first_name": f.get("first_name", ""),
+                "last_name": f.get("last_name", ""),
+                "country": f.get("country", ""),
+                "status": f.get("status", ""),
+                "telegram_linked": bool(f.get("telegram_chat_id")),
+                "last_seen": f.get("last_seen"),
+                "last_message": last["text"] if last else None,
+                "last_at": last["sent_at"] if last else None,
+                "last_from": last["from_user_id"] if last else None,
+                "unread": unread,
+            })
+        # Sort by last_at desc, then unread desc
+        rows.sort(key=lambda r: (r["last_at"] or datetime.min.replace(tzinfo=timezone.utc), r["unread"]), reverse=True)
+        return rows
+
+    # Formando: just admin contact
+    admin_email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+    admin = await db.users.find_one(
+        {"email": admin_email},
+        {"_id": 0, "id": 1, "name": 1, "first_name": 1, "last_name": 1, "telegram_chat_id": 1},
+    )
+    if not admin:
+        return []
+    last = await db.messages.find_one(
+        {"$or": [
+            {"from_user_id": admin["id"], "to_user_id": user["id"]},
+            {"from_user_id": user["id"], "to_user_id": admin["id"]},
+        ]},
+        sort=[("sent_at", -1)],
+    )
+    unread = await db.messages.count_documents({
+        "from_user_id": admin["id"],
+        "to_user_id": user["id"],
+        "read_at": None,
+    })
+    return [{
+        "user_id": admin["id"],
+        "name": admin.get("name") or "Administrador",
+        "first_name": admin.get("first_name", ""),
+        "last_name": admin.get("last_name", ""),
+        "country": "",
+        "status": "approved",
+        "telegram_linked": bool(admin.get("telegram_chat_id")),
+        "last_seen": None,
+        "last_message": last["text"] if last else None,
+        "last_at": last["sent_at"] if last else None,
+        "last_from": last["from_user_id"] if last else None,
+        "unread": unread,
+    }]
+
+
+@chat_router.get("/messages/{other_user_id}")
+async def get_messages(other_user_id: str, user: dict = Depends(current_user_dep)):
+    other = await db.users.find_one({"id": other_user_id}, {"_id": 0, "id": 1, "name": 1, "role": 1})
+    if not other:
+        raise HTTPException(status_code=404, detail="Utilizador não encontrado")
+    # Permission
+    if user.get("role") != "admin" and other.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Sem permissão")
+
+    msgs = await db.messages.find(
+        {"$or": [
+            {"from_user_id": user["id"], "to_user_id": other_user_id},
+            {"from_user_id": other_user_id, "to_user_id": user["id"]},
+        ]},
+        {"_id": 0},
+    ).sort("sent_at", 1).to_list(500)
+
+    # Mark messages from `other` to `me` as read
+    await db.messages.update_many(
+        {"from_user_id": other_user_id, "to_user_id": user["id"], "read_at": None},
+        {"$set": {"read_at": datetime.now(timezone.utc)}},
+    )
+    return {
+        "messages": msgs,
+        "other": {
+            "user_id": other.get("id"),
+            "name": other.get("name", ""),
+            "role": other.get("role", "formando"),
+        },
+    }
+
+
+@chat_router.get("/unread-count")
+async def unread_count(user: dict = Depends(current_user_dep)):
+    n = await db.messages.count_documents({"to_user_id": user["id"], "read_at": None})
+    return {"count": n}
+
+
+app.include_router(chat_router)
 
 app.add_middleware(
     CORSMiddleware,
