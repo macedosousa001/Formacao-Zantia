@@ -1121,7 +1121,14 @@ async def list_conversations(user: dict = Depends(current_user_dep)):
                 "unread": unread,
             })
         # Sort by last_at desc, then unread desc
-        rows.sort(key=lambda r: (r["last_at"] or datetime.min.replace(tzinfo=timezone.utc), r["unread"]), reverse=True)
+        def _sort_key(r):
+            la = r.get("last_at")
+            if la is None:
+                la = datetime.min.replace(tzinfo=timezone.utc)
+            elif getattr(la, "tzinfo", None) is None:
+                la = la.replace(tzinfo=timezone.utc)
+            return (la, r["unread"])
+        rows.sort(key=_sort_key, reverse=True)
         return rows
 
     # Formando: just admin contact

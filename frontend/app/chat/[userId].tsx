@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
@@ -19,18 +19,21 @@ type Message = {
   source: 'app' | 'telegram';
   sent_at: string;
   read_at: string | null;
+  ai_suggestion?: string | null;
+  ai_confident?: boolean;
 };
 
 export default function ChatRoom() {
   const router = useRouter();
   const { userId } = useLocalSearchParams<{ userId: string }>();
-  const { user, isAuthed, loading: authLoading, authFetch } = useAuth();
+  const { user, isAuthed, isAdmin, loading: authLoading, authFetch } = useAuth();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [otherName, setOtherName] = useState('');
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [dismissedSuggestionIds, setDismissedSuggestionIds] = useState<Set<string>>(new Set());
   const scrollRef = useRef<ScrollView>(null);
 
   useEffect(() => {
@@ -62,8 +65,25 @@ export default function ChatRoom() {
     return () => clearInterval(id);
   }, [isAuthed, userId, load]);
 
-  const send = async () => {
-    const text = input.trim();
+  // Latest INCOMING message that has an AI suggestion (admin only)
+  const latestSuggestion = useMemo(() => {
+    if (!isAdmin) return null;
+    // Find the last message FROM the formando that hasn't been answered yet
+    const lastTheir = [...messages].reverse().find((m) => m.from_user_id !== user?.id);
+    if (!lastTheir) return null;
+    if (!lastTheir.ai_suggestion) return null;
+    if (dismissedSuggestionIds.has(lastTheir.id)) return null;
+    // If the admin already replied AFTER this incoming message, hide the suggestion
+    const lastTheirIdx = messages.findIndex((m) => m.id === lastTheir.id);
+    const repliedAfter = messages
+      .slice(lastTheirIdx + 1)
+      .some((m) => m.from_user_id === user?.id);
+    if (repliedAfter) return null;
+    return lastTheir;
+  }, [messages, isAdmin, user?.id, dismissedSuggestionIds]);
+
+  const send = async (overrideText?: string) => {
+    const text = (overrideText ?? input).trim();
     if (!text || !userId) return;
     setSending(true);
     try {
@@ -73,12 +93,25 @@ export default function ChatRoom() {
         body: JSON.stringify({ to_user_id: userId, text }),
       });
       if (r.ok) {
-        setInput('');
+        if (!overrideText) setInput('');
         await load();
       }
     } finally {
       setSending(false);
     }
+  };
+
+  const acceptSuggestion = () => {
+    if (!latestSuggestion?.ai_suggestion) return;
+    setInput(latestSuggestion.ai_suggestion);
+  };
+  const sendSuggestionAsIs = () => {
+    if (!latestSuggestion?.ai_suggestion) return;
+    send(latestSuggestion.ai_suggestion);
+  };
+  const dismissSuggestion = () => {
+    if (!latestSuggestion) return;
+    setDismissedSuggestionIds((prev) => new Set(prev).add(latestSuggestion.id));
   };
 
   const fmtTime = (iso: string) => {
@@ -143,6 +176,50 @@ export default function ChatRoom() {
           )}
         </ScrollView>
 
+        {/* AI Suggestion banner (admin only) */}
+        {!!latestSuggestion?.ai_suggestion && (
+          <View style={styles.aiCard} testID="ai-suggestion-card">
+            <View style={styles.aiHeader}>
+              <View style={styles.aiBadge}>
+                <Ionicons name="sparkles" size={12} color="#fff" />
+                <Text style={styles.aiBadgeText}>Sugestão AI</Text>
+              </View>
+              {latestSuggestion.ai_confident ? (
+                <View style={[styles.confPill, { backgroundColor: '#DCFCE7', borderColor: '#86EFAC' }]}>
+                  <Text style={[styles.confPillText, { color: '#15803D' }]}>✓ Confiante</Text>
+                </View>
+              ) : (
+                <View style={[styles.confPill, { backgroundColor: '#FEF3C7', borderColor: '#FCD34D' }]}>
+                  <Text style={[styles.confPillText, { color: '#92400E' }]}>⚠ Reveja</Text>
+                </View>
+              )}
+              <TouchableOpacity onPress={dismissSuggestion} style={styles.aiClose} testID="ai-dismiss">
+                <Ionicons name="close" size={18} color={theme.colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.aiText} selectable>{latestSuggestion.ai_suggestion}</Text>
+            <View style={styles.aiActions}>
+              <TouchableOpacity
+                style={styles.aiBtnGhost}
+                onPress={acceptSuggestion}
+                testID="ai-edit"
+              >
+                <Ionicons name="create-outline" size={14} color={theme.colors.secondary} />
+                <Text style={styles.aiBtnGhostText}>Editar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.aiBtnPrimary, sending && { opacity: 0.6 }]}
+                onPress={sendSuggestionAsIs}
+                disabled={sending}
+                testID="ai-send"
+              >
+                <Ionicons name="send" size={14} color="#fff" />
+                <Text style={styles.aiBtnPrimaryText}>Enviar tal e qual</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         <View style={styles.composer}>
           <TextInput
             style={styles.input}
@@ -157,7 +234,7 @@ export default function ChatRoom() {
           />
           <TouchableOpacity
             style={[styles.sendBtn, (!input.trim() || sending) && { opacity: 0.5 }]}
-            onPress={send}
+            onPress={() => send()}
             disabled={!input.trim() || sending}
             testID="chat-send"
           >
@@ -211,4 +288,40 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primary,
     alignItems: 'center', justifyContent: 'center',
   },
+  // AI suggestion card
+  aiCard: {
+    marginHorizontal: 10, marginBottom: 4, padding: 12,
+    backgroundColor: '#F5F3FF',
+    borderWidth: 1, borderColor: '#C4B5FD',
+    borderRadius: 10, gap: 8,
+  },
+  aiHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  aiBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: '#7C3AED', paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4,
+  },
+  aiBadgeText: { color: '#fff', fontSize: 10, fontWeight: '900', letterSpacing: 0.5 },
+  confPill: {
+    paddingHorizontal: 8, paddingVertical: 2, borderRadius: 10, borderWidth: 1,
+  },
+  confPillText: { fontSize: 10, fontWeight: '800' },
+  aiClose: { marginLeft: 'auto', padding: 2 },
+  aiText: {
+    fontSize: 13, color: theme.colors.textMain, lineHeight: 19,
+    backgroundColor: '#fff', padding: 10, borderRadius: 6,
+    borderWidth: 1, borderColor: '#E9D5FF',
+  },
+  aiActions: { flexDirection: 'row', gap: 8 },
+  aiBtnGhost: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 9,
+    borderWidth: 1, borderColor: theme.colors.secondary, borderRadius: 4,
+  },
+  aiBtnGhostText: { color: theme.colors.secondary, fontWeight: '800', fontSize: 12 },
+  aiBtnPrimary: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 9,
+    backgroundColor: '#7C3AED', borderRadius: 4,
+  },
+  aiBtnPrimaryText: { color: '#fff', fontWeight: '800', fontSize: 12 },
 });

@@ -108,6 +108,30 @@ user_problem_statement: |
   manual user approval workflow, and Telegram bot integration for admin notifications & user linking.
 
 backend:
+  - task: "Chat - GET /api/chat/conversations sort fix (timezone-aware)"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Fixed 500 'can't compare offset-naive and offset-aware datetimes' on /chat/conversations. Sort key now normalizes naive datetimes to UTC-aware. Verified via curl: returns 200 with the formando list including last_message and last_at."
+
+  - task: "Chat - AI suggestion field returned in /chat/messages"
+    implemented: true
+    working: true
+    file: "/app/backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Verified: messages include ai_suggestion + ai_confident when posted by formando through /chat/send. EMERGENT_LLM_KEY integration generates suggestions using context (gavetoes/gavetinhas/recent history). [NÃO_SEI] prefix marks low-confidence answers."
+
   - task: "Auth - register with phone + status=pending + Telegram notify admin"
     implemented: true
     working: true
@@ -227,6 +251,30 @@ backend:
       - working: true
         agent: "testing"
         comment: "PASS. After login as admin, UserOut shows phone='964177779' and status='approved', confirming seed_admin populates phone from ADMIN_PHONE env and forces status=approved on the existing admin record."
+
+  - task: "Login UX - white screen + 0 areas fix (perfil missing imports + error retry)"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/perfil.tsx, /app/frontend/app/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Two root causes for the user-reported issue 'login → blank screen + 0 areas de formação':\n  1) /perfil was using Country/findCountry/COUNTRIES/EvolutionChart/GavetaoComparisonBars without importing them, crashing the screen with a ReferenceError. Added the missing imports.\n  2) Home /gavetoes fetch had no timeout/error UI: any network failure left it stuck on '0 areas de formação'. Added 12s AbortController timeout, distinct loadError state, retry button, and contextual empty state. Section title now shows '…' while loading and '—' on error instead of '0'.\n  Also removed stray whitespace at line 368 of index.tsx that was emitting 'Unexpected text node' warnings."
+
+  - task: "Chat - AI suggestion UI (admin only)"
+    implemented: true
+    working: true
+    file: "/app/frontend/app/chat/[userId].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: "Added an 'AI Suggestion' card above the composer that appears for the admin only when the latest INCOMING message has an ai_suggestion and the admin has not yet replied or dismissed it. Card shows: confidence pill ('✓ Confiante' or '⚠ Reveja'), full suggestion text, and three actions: Editar (loads suggestion into the composer), Enviar tal e qual (sends as-is), × close (dismisses for that message id). Verified end-to-end: formando posts question via /chat/send → backend AI generates suggestion → admin sees the purple card with the AI text and actions; clicking 'Editar' populated the composer with the AI text. Zero console errors."
 
 frontend:
   - task: "Login screen - phone field on register"

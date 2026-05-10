@@ -59,6 +59,7 @@ export default function Home() {
   useEffect(() => { loadStats(); }, [loadStats]);
   const [gavetoes, setGavetoes] = useState<Gavetao[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [settings, setSettings] = useState({
@@ -77,16 +78,23 @@ export default function Home() {
 
   const load = useCallback(async () => {
     try {
+      setLoadError(null);
+      // Add a hard timeout (12s) so the page does not hang on flaky mobile networks.
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), 12000);
       const [resG, resS] = await Promise.all([
-        fetch(`${API_URL}/gavetoes`),
-        fetch(`${API_URL}/settings`),
+        fetch(`${API_URL}/gavetoes`, { signal: controller.signal }),
+        fetch(`${API_URL}/settings`, { signal: controller.signal }),
       ]);
+      clearTimeout(t);
+      if (!resG.ok) throw new Error(`HTTP ${resG.status}`);
       const data = await resG.json();
       const s = await resS.json();
       setGavetoes(data);
       setSettings(s);
-    } catch (e) {
+    } catch (e: any) {
       console.log('load error', e);
+      setLoadError(e?.name === 'AbortError' ? 'Tempo limite excedido. Verifique a sua ligação.' : 'Não foi possível carregar o catálogo. Toque em Tentar novamente.');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -365,7 +373,8 @@ export default function Home() {
               <Ionicons name="create-outline" size={16} color="#fff" />
               <Text style={styles.heroEditText}>{t('heroEditBtn')}</Text>
             </TouchableOpacity>
-          )}          <View style={[styles.heroContent, isWide && { paddingHorizontal: 64 }]}>
+          )}
+          <View style={[styles.heroContent, isWide && { paddingHorizontal: 64 }]}>
             <View style={styles.heroTag}>
               <View style={styles.heroDot} />
               <Text style={styles.heroTagText}>{t('heroEyebrow')}</Text>
@@ -392,7 +401,9 @@ export default function Home() {
           <View style={styles.sectionHeaderRow}>
             <View style={{ flex: 1 }}>
               <Text style={styles.sectionEyebrow}>{t('catalogEyebrow')}</Text>
-              <Text style={styles.sectionTitle}>{gavetoes.length} {t('areasOfTraining')}</Text>
+              <Text style={styles.sectionTitle}>
+                {loading ? '…' : loadError ? '—' : gavetoes.length} {t('areasOfTraining')}
+              </Text>
             </View>
             {isAdmin && (
               <TouchableOpacity
@@ -413,6 +424,26 @@ export default function Home() {
         {/* Grid */}
         {loading ? (
           <ActivityIndicator size="large" color={theme.colors.primary} style={{ marginTop: 40 }} />
+        ) : loadError ? (
+          <View style={styles.errorBox} testID="home-error-box">
+            <Ionicons name="cloud-offline-outline" size={32} color={theme.colors.primary} />
+            <Text style={styles.errorTitle}>Sem ligação ao servidor</Text>
+            <Text style={styles.errorText}>{loadError}</Text>
+            <TouchableOpacity
+              style={styles.retryBtn}
+              onPress={() => { setLoading(true); load(); }}
+              testID="home-retry"
+            >
+              <Ionicons name="refresh" size={16} color="#fff" />
+              <Text style={styles.retryBtnText}>Tentar novamente</Text>
+            </TouchableOpacity>
+          </View>
+        ) : gavetoes.length === 0 ? (
+          <View style={styles.errorBox}>
+            <Ionicons name="folder-open-outline" size={32} color={theme.colors.textLight} />
+            <Text style={styles.errorTitle}>Catálogo vazio</Text>
+            <Text style={styles.errorText}>Ainda não foram adicionadas áreas de formação.</Text>
+          </View>
         ) : (
           <View style={[styles.grid, isWide && { paddingHorizontal: 56 }]} testID="gavetoes-grid">
             {gavetoes.map((g, idx) => (
@@ -807,4 +838,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4, borderWidth: 2, borderColor: theme.colors.surface,
   },
   chatBadgeText: { color: '#fff', fontWeight: '900', fontSize: 10 },
+  errorBox: {
+    margin: 24,
+    padding: 24,
+    borderRadius: 10,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
+    gap: 8,
+  },
+  errorTitle: { fontSize: 16, fontWeight: '900', color: theme.colors.secondary, marginTop: 4 },
+  errorText: { fontSize: 13, color: theme.colors.textMuted, textAlign: 'center', lineHeight: 18 },
+  retryBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: theme.colors.primary, paddingHorizontal: 18, paddingVertical: 10,
+    borderRadius: 4, marginTop: 10,
+  },
+  retryBtnText: { color: '#fff', fontWeight: '800', fontSize: 13 },
 });

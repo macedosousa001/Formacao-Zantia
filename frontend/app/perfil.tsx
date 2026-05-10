@@ -9,6 +9,8 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { theme } from '../src/theme';
 import { useAuth } from '../src/auth';
+import { COUNTRIES, findCountry, Country } from '../src/countries';
+import EvolutionChart, { GavetaoComparisonBars } from '../src/EvolutionChart';
 
 type Attempt = {
   id: string;
