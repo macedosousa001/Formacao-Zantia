@@ -1,0 +1,35 @@
+# Render Blueprint — Zantia Formação API
+# Docs: https://render.com/docs/blueprint-spec
+# Push this repo to GitHub, then in Render → New + → Blueprint → connect the repo.
+
+services:
+  - type: web
+    name: zantia-api
+    runtime: python
+    region: frankfurt              # closest to Portugal
+    plan: free                     # 750h/month free, sleeps after 15 min idle
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*'
+    healthCheckPath: /api/
+    autoDeploy: true               # redeploy on every git push
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.10
+      - key: MONGO_URL
+        sync: false                # set manually in dashboard (Atlas connection string)
+      - key: DB_NAME
+        value: zantia_prod
+      - key: JWT_SECRET
+        generateValue: true        # Render auto-generates a secure random value
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: ADMIN_NAME
+        sync: false
+      - key: ADMIN_PHONE
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: EMERGENT_LLM_KEY
+        sync: false
