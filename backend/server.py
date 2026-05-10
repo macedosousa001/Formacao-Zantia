@@ -938,16 +938,32 @@ async def telegram_webhook(request: Request):
         "source": "telegram",
         "sent_at": datetime.now(timezone.utc),
         "read_at": None,
+        "ai_suggestion": None,
+        "ai_confident": False,
     }
+    # Generate AI suggestion (best-effort)
+    try:
+        ai = await _generate_ai_suggestion(text, sender)
+        if ai:
+            message["ai_suggestion"] = ai["suggestion"]
+            message["ai_confident"] = ai.get("confident", False)
+    except Exception as e:
+        logger.warning("AI suggestion error: %s", e)
     await db.messages.insert_one(message)
 
     # Notify admin via Telegram (if admin has chat linked)
     if admin.get("telegram_chat_id"):
         try:
+            ai_block = ""
+            if message["ai_suggestion"]:
+                conf_emoji = "✅" if message["ai_confident"] else "⚠️"
+                ai_block = (
+                    f"\n\n{conf_emoji} <b>Sugestão AI:</b>\n<i>{message['ai_suggestion'][:400]}</i>"
+                )
             await telegram_bot.send_message(
                 admin["telegram_chat_id"],
-                f"💬 <b>Nova mensagem de {sender.get('name','?')}</b>\n\n{text[:300]}\n\n"
-                "<i>Responda na app web (Admin → Chat) para o formando receber.</i>",
+                f"💬 <b>Nova mensagem de {sender.get('name','?')}</b>\n\n{text[:300]}"
+                f"{ai_block}\n\n<i>Responda na app web (Admin → Chat) para o formando receber.</i>",
             )
         except Exception:
             pass
@@ -965,6 +981,44 @@ app.include_router(telegram_router)
 
 # ===== Chat (bidirectional Admin <-> Formando) =====
 chat_router = APIRouter(prefix="/api/chat")
+
+# Lazy import of AI assistant
+async def _generate_ai_suggestion(message_text: str, sender: dict) -> dict:
+    """Returns dict {suggestion, confident, reason} or None on failure."""
+    try:
+        from ai_assistant import suggest_reply
+        # Build context from DB
+        gavetoes = await db.gavetoes.find({}, {"_id": 0, "id": 1, "title": 1, "subtitle": 1}).to_list(20)
+        gavetinhas = await db.gavetinhas.find(
+            {}, {"_id": 0, "title": 1, "description": 1, "specs": 1}
+        ).to_list(80)
+        # Recent history (last 6 messages with this user)
+        admin_email = os.environ.get("ADMIN_EMAIL", "").strip().lower()
+        admin = await db.users.find_one({"email": admin_email})
+        history = []
+        if admin:
+            recent = await db.messages.find(
+                {"$or": [
+                    {"from_user_id": sender["id"], "to_user_id": admin["id"]},
+                    {"from_user_id": admin["id"], "to_user_id": sender["id"]},
+                ]},
+                {"_id": 0, "from_user_id": 1, "from_role": 1, "text": 1},
+            ).sort("sent_at", -1).limit(6).to_list(6)
+            history = [
+                {"role": h.get("from_role", "formando"), "text": h.get("text", "")}
+                for h in reversed(recent)
+            ]
+        result = await suggest_reply(
+            user_message=message_text,
+            user_name=sender.get("name", ""),
+            history=history,
+            gavetoes=gavetoes,
+            gavetinhas=gavetinhas,
+        )
+        return result
+    except Exception as e:
+        logger.warning("AI suggestion failed: %s", e)
+        return None
 
 
 class MessageIn(BaseModel):
@@ -995,7 +1049,18 @@ async def send_message(payload: MessageIn, user: dict = Depends(current_user_dep
         "source": "app",
         "sent_at": datetime.now(timezone.utc),
         "read_at": None,
+        "ai_suggestion": None,
+        "ai_confident": False,
     }
+    # If the sender is a formando (writing to admin from the app), generate AI suggestion
+    if user.get("role") != "admin":
+        try:
+            ai = await _generate_ai_suggestion(text, user)
+            if ai:
+                message["ai_suggestion"] = ai["suggestion"]
+                message["ai_confident"] = ai.get("confident", False)
+        except Exception as e:
+            logger.warning("AI suggestion (app msg) failed: %s", e)
     await db.messages.insert_one(message)
 
     # Forward to recipient's Telegram if linked
