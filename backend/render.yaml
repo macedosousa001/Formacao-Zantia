@@ -8,7 +8,7 @@ services:
     runtime: python
     region: frankfurt              # closest to Portugal
     plan: free                     # 750h/month free, sleeps after 15 min idle
-    buildCommand: pip install -r requirements.txt
+    buildCommand: pip install -r requirements.deploy.txt
     startCommand: uvicorn server:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips '*'
     healthCheckPath: /api/
     autoDeploy: true               # redeploy on every git push
